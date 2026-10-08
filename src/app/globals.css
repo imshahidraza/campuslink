@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #14121f;
+
+  /* Brand: deep violet/indigo, echoing the reference (dark hero, glass cards) */
+  --brand-950: #0b0714;
+  --brand-900: #150c29;
+  --brand-800: #1f1338;
+  --brand-700: #2c1a4d;
+  --brand-600: #3f2470;
+  --brand-500: #5b32a0;
+  --brand-400: #7c4fd1;
+  --brand-300: #a480e6;
+  --brand-200: #cdb8f2;
+  --brand-100: #ece3fb;
+
+  --accent-lime: #cdfa50;
+  --ink: #14121f;
+  --muted: #6b6579;
+  --surface: #f7f5fb;
+  --surface-2: #efeaf7;
+  --border-soft: #e6e0f2;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-instrument-serif), Georgia, serif;
+
+  --color-brand-950: var(--brand-950);
+  --color-brand-900: var(--brand-900);
+  --color-brand-800: var(--brand-800);
+  --color-brand-700: var(--brand-700);
+  --color-brand-600: var(--brand-600);
+  --color-brand-500: var(--brand-500);
+  --color-brand-400: var(--brand-400);
+  --color-brand-300: var(--brand-300);
+  --color-brand-200: var(--brand-200);
+  --color-brand-100: var(--brand-100);
+
+  --color-accent-lime: var(--accent-lime);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border-soft: var(--border-soft);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.bg-hero-gradient {
+  background: radial-gradient(120% 120% at 15% 0%, var(--brand-700) 0%, var(--brand-900) 45%, var(--brand-950) 100%);
+}
+
+.bg-panel-gradient {
+  background: linear-gradient(160deg, var(--brand-600) 0%, var(--brand-900) 100%);
+}
+
+.card-glass {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  /* Promote to its own GPU layer up front, instead of the browser deciding
+     mid-scroll — this is what causes stutter on some Chromium-based mobile
+     browsers (e.g. Samsung Internet) when combined with per-frame transforms. */
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--border-soft);
+  border-radius: 999px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.toast-in {
+  animation: toast-in 0.2s ease-out;
+}
+
+/* Landing-page parallax layers: hint the browser, keep transforms cheap */
+[data-parallax] {
+  will-change: transform;
+  transform: translateZ(0);
+}
+[data-tilt] {
+  transition: transform 0.18s ease-out;
+  will-change: transform;
+  transform: translateZ(0);
+}
+.text-outline {
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(124, 79, 209, 0.28);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-parallax],
+  [data-tilt] {
+    transform: none !important;
+    transition: none !important;
+  }
+}

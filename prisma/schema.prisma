@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TPO
+  RECRUITER
+}
+
+/// TPO-managed catalog of specializations per program (e.g. B.Tech -> CSE, MBA -> Marketing).
+/// Program is one of the fixed PROGRAM_OPTIONS in src/lib/programs.ts.
+/// name is always stored uppercase to prevent case-duplicate entries.
+model Specialization {
+  id        String   @id @default(cuid())
+  program   String
+  name      String
+  createdAt DateTime @default(now())
+
+  @@unique([program, name])
+}
+
+/// Single row in practice (this build is single-college). The first TPO to
+/// register creates it; every TPO after that just joins the existing one.
+model College {
+  id          String   @id @default(cuid())
+  name        String
+  emailDomain String? // e.g. "mycollege.edu" — if set, student signup emails must match it
+  createdAt   DateTime @default(now())
+}
+
+/// A roster row the TPO enters ahead of time (bulk-pasted). A student "claims"
+/// it at signup by roll number (+ email domain check), which creates their
+/// real Student record from these TPO-verified values and removes this row.
+model PendingStudent {
+  id             String   @id @default(cuid())
+  rollNo         String   @unique
+  name           String
+  program        String
+  branch         String
+  cgpa           Float
+  backlogs       Int
+  graduationYear Int
+  createdAt      DateTime @default(now())
+}
+
+enum ReadinessLevel {
+  NOT_READY
+  DEVELOPING
+  READY
+  HIGHLY_READY
+}
+
+enum PlacementStatus {
+  UNPLACED
+  APPLIED
+  SHORTLISTED
+  INTERVIEW
+  SELECTED
+  OFFER_RECEIVED
+  OFFER_ACCEPTED
+  OFFER_DECLINED
+  JOINED
+}
+
+enum DriveStatus {
+  DRAFT
+  OPEN
+  IN_PROGRESS
+  CLOSED
+}
+
+enum ApplicationStage {
+  ELIGIBLE
+  SHORTLISTED
+  INTERVIEW
+  SELECTED
+  OFFER
+  REJECTED
+}
+
+enum NotificationType {
+  DRIVE_ANNOUNCEMENT
+  SHORTLIST
+  INTERVIEW_SCHEDULE
+  DOCUMENT_DEADLINE
+  OFFER_UPDATE
+  GENERAL
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      Role
+  name      String
+  createdAt DateTime @default(now())
+
+  student   Student?
+  recruiter Recruiter?
+}
+
+model Student {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  // Official / verified college data (TPO-managed)
+  rollNo             String   @unique
+  program            String?  // e.g. "B.Tech", "MBA" — picked from the fixed PROGRAM_OPTIONS list
+  branch             String   // specialization name, e.g. "CSE" — always uppercase, sourced from the Specialization catalog
+  cgpa               Float
+  backlogs           Int      @default(0)
+  graduationYear     Int
+  aptitudeScore      Int?
+  reasoningScore     Int?
+  verbalScore        Int?
+  communicationScore Int?
+  placementStatus    PlacementStatus @default(UNPLACED)
+
+  // Student-provided career data
+  resumeText     String?
+  resumeSkills   String[] @default([])
+  skills         String[] @default([])
+  projects       Json?    // [{title, description, tech[]}]
+  certifications String[] @default([])
+  experience     Json?    // [{title, org, duration, description}]
+  courses        String[] @default([])
+  githubUrl      String?
+  linkedinUrl    String?
+  portfolioUrl   String?
+  preferredRoles String[] @default([])
+
+  // AI-derived
+  readinessLevel   ReadinessLevel?
+  readinessSummary String?
+  strengths        String[] @default([])
+  skillGaps        String[] @default([])
+  improvementAreas String[] @default([])
+  readinessUpdatedAt DateTime?
+
+  applications  Application[]
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Recruiter {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  companyName String
+  companyDesc String?
+  website     String?
+  industry    String?
+
+  drives Drive[]
+
+  createdAt DateTime @default(now())
+}
+
+model Drive {
+  id          String      @id @default(cuid())
+  recruiterId String
+  recruiter   Recruiter   @relation(fields: [recruiterId], references: [id])
+
+  companyName String
+  jobRole     String
+  jobDescriptionRaw String
+
+  // AI-structured JD (from Gemma)
+  jdRequiredSkills  String[] @default([])
+  jdPreferredSkills String[] @default([])
+  jdSummary         String?
+
+  // Deterministic eligibility rules
+  minCgpa        Float?
+  maxBacklogs    Int?
+  eligibleBranches String[] @default([])
+  eligibleGradYears Int[]   @default([])
+
+  driveDate   DateTime?
+  venue       String?
+  interviewStages String[] @default([])
+  status      DriveStatus @default(DRAFT)
+
+  applications Application[]
+  interviews   Interview[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Application {
+  id        String            @id @default(cuid())
+  studentId String
+  student   Student           @relation(fields: [studentId], references: [id])
+  driveId   String
+  drive     Drive             @relation(fields: [driveId], references: [id])
+
+  stage ApplicationStage @default(ELIGIBLE)
+
+  // TPO Special Consideration — lets a TPO surface a student to a recruiter
+  // despite failing a rule-based eligibility check (e.g. low CGPA), when
+  // their skills/projects justify a look. Never bypasses the recruiter's
+  // own decision — only affects visibility, not stage/selection.
+  specialConsideration     Boolean @default(false)
+  specialConsiderationNote String?
+
+  // AI matching output
+  fitScore          Int?
+  matchedSkills      String[] @default([])
+  missingSkills      String[] @default([])
+  relevantProjects   String[] @default([])
+  matchExplanation   String?
+
+  offerPackage String?
+  offerStatus  String? // Offer Received / Accepted / Declined
+  documentsVerified Boolean @default(false)
+  joined       Boolean @default(false)
+
+  interviews Interview[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, driveId])
+}
+
+model Interview {
+  id            String   @id @default(cuid())
+  driveId       String
+  drive         Drive    @relation(fields: [driveId], references: [id])
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  stage     String
+  scheduledAt DateTime
+  durationMins Int @default(30)
+  venue     String?
+  panel     String?
+
+  hasConflict Boolean @default(false)
+  conflictNote String?
+
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  studentId String
+  student   Student          @relation(fields: [studentId], references: [id])
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}

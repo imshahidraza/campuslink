@@ -95,8 +95,8 @@ export default function LoginPage() {
 
         <div className={`flex items-center gap-2.5 text-white mb-2 ${!role ? "justify-center" : ""}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.jpeg" alt="CampusLink" className="h-10 w-10 rounded-lg" />
-          <span className="font-serif text-3xl tracking-tight">CampusLink</span>
+          <img src="/logo.jpeg" alt="C-link" className="h-10 w-10 rounded-lg" />
+          <span className="font-serif text-3xl tracking-tight">C-link</span>
         </div>
 
         {!role && (

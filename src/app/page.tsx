@@ -46,8 +46,8 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8 flex items-center justify-between h-20">
           <div className="flex items-center gap-2.5 text-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.jpeg" alt="CampusLink" className="h-9 w-9 rounded-lg" />
-            <span className="font-serif text-2xl tracking-tight">CampusLink</span>
+            <img src="/logo.jpeg" alt="C-Link" className="h-9 w-9 rounded-lg" />
+            <span className="font-serif text-2xl tracking-tight">C-Link</span>
           </div>
           <nav className="hidden md:flex items-center gap-8 text-sm text-white/70">
             <a href="#pipeline" className="hover:text-white transition-colors">How it works</a>
@@ -260,8 +260,8 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.jpeg" alt="CampusLink" className="h-7 w-7 rounded-md" />
-            <span className="font-serif text-lg">CampusLink</span>
+            <img src="/logo.jpeg" alt="C-Link" className="h-7 w-7 rounded-md" />
+            <span className="font-serif text-lg">C-Link</span>
           </div>
           <p className="text-white/40 text-xs">AI-assisted, not autonomous — decisions stay human.</p>
         </div>

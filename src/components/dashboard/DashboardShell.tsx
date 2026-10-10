@@ -84,8 +84,8 @@ export function DashboardShell({
       <aside className="w-64 shrink-0 bg-brand-950 flex flex-col">
         <div className="h-20 flex items-center gap-2.5 px-6 text-white font-semibold">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.jpeg" alt="CampusLink" className="h-9 w-9 rounded-lg" />
-          <span className="font-serif text-2xl font-normal tracking-tight">CampusLink</span>
+          <img src="/logo.jpeg" alt="C-Link" className="h-9 w-9 rounded-lg" />
+          <span className="font-serif text-2xl font-normal tracking-tight">C-Link</span>
         </div>
         <nav className="flex-1 px-3 py-2 space-y-1">
           {navItems.map((item) => {

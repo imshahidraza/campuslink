@@ -13,7 +13,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "CampusLink — Aligning Campus-to-Corporate",
+  title: "C-Link — Aligning Campus-to-Corporate",
   description: "AI-powered campus-to-corporate placement management & analytics platform.",
 };
 

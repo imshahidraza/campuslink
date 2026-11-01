@@ -2,10 +2,17 @@ import { requireStudentOrRedirect } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ProfileForm } from "@/components/dashboard/ProfileForm";
 import { ResumeParser } from "@/components/dashboard/ResumeParser";
+import { ResumeFeedback, type ResumeFeedbackData } from "@/components/dashboard/ResumeFeedback";
 import { ShieldCheck } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 
 export default async function ProfilePage() {
   const { session, student } = await requireStudentOrRedirect();
+  // Metadata only — never select the file bytes here.
+  const resume = await prisma.resume.findUnique({
+    where: { studentId: student.id },
+    select: { fileName: true, size: true, uploadedAt: true },
+  });
 
   return (
     <div>
@@ -47,7 +54,21 @@ export default async function ProfilePage() {
               <CardTitle>Resume — AI import</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResumeParser />
+              <ResumeParser
+                saved={resume ? { studentId: student.id, fileName: resume.fileName, size: resume.size, uploadedAt: resume.uploadedAt.toISOString() } : null}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Resume feedback</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResumeFeedback
+                existing={(student.resumeFeedback as ResumeFeedbackData | null) ?? null}
+                canReview={Boolean(student.resumeText && student.resumeText.trim().length >= 40)}
+              />
             </CardContent>
           </Card>
 

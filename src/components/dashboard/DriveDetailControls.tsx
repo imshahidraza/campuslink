@@ -96,7 +96,7 @@ export function EligibilityForm({
           toast((err as Error).message || "Couldn't save — try again.", "error");
         }
       }}
-      className="grid grid-cols-2 gap-3"
+      className="grid grid-cols-1 sm:grid-cols-2 gap-3"
     >
       <input
         name="minCgpa"

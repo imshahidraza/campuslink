@@ -3,14 +3,38 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const COOKIE_NAME = "campuslink_session";
 
-if (JWT_SECRET === "dev-secret-change-me") {
+const WEAK_SECRETS = ["dev-secret-change-me", "change-this-to-any-random-string"];
+
+function isWeakSecret(v: string | undefined) {
+  return !v || v.length < 16 || WEAK_SECRETS.includes(v);
+}
+
+/**
+ * In production a weak/default JWT secret is refused outright (anyone who knows it could forge a login
+ * for any account). It's checked lazily, on first use, so `next build` itself doesn't need the secret.
+ * In development we only warn, so local setup stays easy.
+ */
+function getJwtSecret(): string {
+  const v = process.env.JWT_SECRET;
+  if (isWeakSecret(v)) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "JWT_SECRET is missing, too short, or still a placeholder. Set a long random value, e.g. " +
+          'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+      );
+      throw new Error("Server is not configured correctly. Please contact the administrator.");
+    }
+    return v && v.length > 0 ? v : "dev-secret-change-me";
+  }
+  return v as string;
+}
+
+if (process.env.NODE_ENV !== "production" && isWeakSecret(process.env.JWT_SECRET)) {
   console.warn(
-    "\n⚠️  JWT_SECRET is still the default placeholder. Anyone who knows this value can forge a " +
-      "login session for any account. Set a random JWT_SECRET in .env before this app is reachable " +
-      "by anyone other than you on localhost.\n"
+    "\n⚠️  JWT_SECRET is a placeholder. Fine for localhost, but set a long random JWT_SECRET in .env " +
+      "before anyone else can reach this app (production mode refuses to start sessions without one).\n"
   );
 }
 
@@ -22,7 +46,7 @@ export interface SessionPayload {
 }
 
 export function signSession(payload: SessionPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
 }
 
 export async function setSessionCookie(payload: SessionPayload) {
@@ -47,7 +71,7 @@ export async function getSession(): Promise<SessionPayload | null> {
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
   try {
-    return jwt.verify(token, JWT_SECRET) as SessionPayload;
+    return jwt.verify(token, getJwtSecret()) as SessionPayload;
   } catch {
     return null;
   }

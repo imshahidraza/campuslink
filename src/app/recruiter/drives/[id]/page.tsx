@@ -13,7 +13,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
     where: { id },
     include: {
       applications: {
-        include: { student: { include: { user: true } } },
+        include: { student: { include: { user: true, resume: { select: { id: true } } } } },
         orderBy: { fitScore: "desc" },
       },
     },
@@ -25,7 +25,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
 
   return (
     <div>
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-ink">{drive.jobRole}</h1>
           <p className="text-muted text-sm mt-1">Posted {new Date(drive.createdAt).toLocaleDateString()}</p>

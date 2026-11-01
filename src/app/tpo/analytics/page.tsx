@@ -16,8 +16,36 @@ function Bar({ label, value, max }: { label: string; value: number; max: number 
   );
 }
 
+// Stages meaning a person actually reviewed the candidate and moved them forward.
+const ADVANCED_STAGES = ["SHORTLISTED", "INTERVIEW", "SELECTED", "OFFER_REQUESTED", "OFFER_SENT", "OFFER_ACCEPTED", "JOINED"];
+
+const CGPA_BANDS = [
+  { label: "Below 6", min: 0, max: 6 },
+  { label: "6 – 7", min: 6, max: 7 },
+  { label: "7 – 8", min: 7, max: 8 },
+  { label: "8 – 9", min: 8, max: 9 },
+  { label: "9 and above", min: 9, max: Infinity },
+];
+
 export default async function AnalyticsPage() {
-  const students = await prisma.student.findMany();
+  const [students, applications] = await Promise.all([
+    prisma.student.findMany(),
+    prisma.application.findMany({ select: { studentId: true, stage: true } }),
+  ]);
+
+  // Fairness check: does advancement track CGPA alone, or spread across bands?
+  const advancedIds = new Set(applications.filter((a) => ADVANCED_STAGES.includes(a.stage)).map((a) => a.studentId));
+  const cgpaBands = CGPA_BANDS.map((band) => {
+    const inBand = students.filter((s) => s.cgpa >= band.min && s.cgpa < band.max);
+    const advanced = inBand.filter((s) => advancedIds.has(s.id)).length;
+    return { label: band.label, total: inBand.length, advanced, rate: inBand.length ? Math.round((advanced / inBand.length) * 100) : 0 };
+  });
+  const sorted = students.map((s) => s.cgpa).sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const medianCgpa = sorted.length === 0 ? 0 : sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const advancedStudents = students.filter((s) => advancedIds.has(s.id));
+  const belowMedian = advancedStudents.filter((s) => s.cgpa < medianCgpa).length;
+  const belowMedianPct = advancedStudents.length ? Math.round((belowMedian / advancedStudents.length) * 100) : 0;
 
   const branchStats = new Map<string, { total: number; placed: number }>();
   const gapCounts = new Map<string, number>();
@@ -54,9 +82,39 @@ export default async function AnalyticsPage() {
   return (
     <div>
       <h1 className="text-2xl font-semibold text-ink">Analytics</h1>
-      <p className="text-muted text-sm mt-1">Specialization-wise outcomes, common skill gaps, and at-risk students.</p>
+      <p className="text-muted text-sm mt-1">Fairness of selections, specialization-wise outcomes, common skill gaps, and students who need support.</p>
 
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <Card className="mt-8">
+        <CardHeader>
+          <CardTitle>Fairness check — is advancement driven by CGPA alone?</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {advancedStudents.length === 0 ? (
+            <p className="text-sm text-muted">
+              Nobody has been shortlisted yet. Once candidates move past eligibility, this shows whether
+              selections spread across CGPA bands or cluster only at the top.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-ink leading-relaxed">
+                <span className="text-2xl font-semibold text-brand-600 mr-1">{belowMedianPct}%</span>
+                of students who advanced (shortlisted or beyond) have a CGPA below the cohort median of{" "}
+                {medianCgpa.toFixed(2)} — {belowMedian} of {advancedStudents.length}.
+              </p>
+              <p className="text-xs text-muted mt-1">
+                A spread across bands means skills, projects and fit are being weighed — not grades alone.
+              </p>
+              <div className="mt-6 space-y-4">
+                {cgpaBands.map((b) => (
+                  <Bar key={b.label} label={`CGPA ${b.label} — ${b.advanced} of ${b.total} advanced`} value={b.rate} max={100} />
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="mt-5 grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card>
           <CardHeader>
             <CardTitle>Placement rate by specialization</CardTitle>

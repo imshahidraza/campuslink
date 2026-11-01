@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { LinkButton } from "@/components/ui/Button";
 import { ParallaxController } from "@/components/landing/ParallaxController";
+import { ScrollReveal } from "@/components/ui/ScrollReveal";
 import { CustomCursor } from "@/components/landing/CustomCursor";
 import { Petal, Ring, Plus, DotGrid, Arc } from "@/components/landing/Symbols";
 import {
@@ -39,6 +41,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white overflow-x-clip">
       <ParallaxController />
+      <ScrollReveal />
       <CustomCursor />
 
       {/* NAV */}
@@ -263,7 +266,10 @@ export default function LandingPage() {
             <img src="/logo.jpeg" alt="C-Link" className="h-7 w-7 rounded-md" />
             <span className="font-serif text-lg">C-Link</span>
           </div>
-          <p className="text-white/40 text-xs">AI-assisted, not autonomous — decisions stay human.</p>
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-5">
+            <p className="text-white/40 text-xs">AI-assisted, not autonomous — decisions stay human.</p>
+            <Link href="/privacy" className="text-white/60 hover:text-white text-xs underline underline-offset-4">Privacy &amp; data handling</Link>
+          </div>
         </div>
       </footer>
     </div>

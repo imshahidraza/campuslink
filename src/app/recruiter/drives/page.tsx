@@ -15,7 +15,7 @@ export default async function RecruiterDrivesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-ink">My Drives</h1>
         <LinkButton href="/recruiter/drives/new" size="sm">
           <Plus className="h-4 w-4" /> New drive

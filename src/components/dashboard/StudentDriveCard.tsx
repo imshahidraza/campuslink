@@ -17,6 +17,7 @@ export function StudentDriveCard({
   drive,
   eligible,
   ineligibleReasons,
+  ineligibleFixes,
   specialConsideration,
   existing,
 }: {
@@ -31,6 +32,7 @@ export function StudentDriveCard({
   };
   eligible: boolean;
   ineligibleReasons: string[];
+  ineligibleFixes?: { problem: string; fix: string }[];
   specialConsideration?: boolean;
   existing: ExistingApp | null;
 }) {
@@ -115,11 +117,22 @@ export function StudentDriveCard({
             <p className="text-sm text-ink flex items-center gap-1.5 font-medium">
               <Lock className="h-3.5 w-3.5 text-muted" /> Why you&apos;re not eligible
             </p>
-            <ul className="mt-2 space-y-1 text-xs text-muted list-disc list-inside">
-              {ineligibleReasons.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
+            {ineligibleFixes && ineligibleFixes.length > 0 ? (
+              <div className="mt-2 space-y-2.5">
+                {ineligibleFixes.map((f, i) => (
+                  <div key={i} className="text-xs">
+                    <p className="text-ink">{f.problem}</p>
+                    <p className="text-muted mt-0.5">{f.fix}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="mt-2 space-y-1 text-xs text-muted list-disc list-inside">
+                {ineligibleReasons.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 

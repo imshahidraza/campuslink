@@ -2,6 +2,7 @@ import { requireStudentOrRedirect } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent } from "@/components/ui/Card";
 import { MarkReadButton } from "@/components/dashboard/MarkReadButton";
+import { markNotificationReadAction } from "@/lib/actions/student";
 import { cn } from "@/lib/utils";
 
 export default async function NotificationsPage() {
@@ -26,7 +27,7 @@ export default async function NotificationsPage() {
                 <p className="text-sm text-muted mt-1">{n.message}</p>
                 <p className="text-[11px] text-muted mt-2">{new Date(n.createdAt).toLocaleString()}</p>
               </div>
-              {!n.read && <MarkReadButton id={n.id} />}
+              {!n.read && <MarkReadButton onMarkRead={markNotificationReadAction.bind(null, n.id)} />}
             </CardContent>
           </Card>
         ))}

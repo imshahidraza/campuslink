@@ -172,3 +172,48 @@ export async function generatePrepPlan(input: {
 }`,
   });
 }
+
+/* ---------- Skill roadmap (from the gaps across the student's open drives) ---------- */
+
+export interface Roadmap {
+  steps: { skill: string; whyItMatters: string; howToLearn: string; miniProject: string }[];
+}
+
+export async function generateRoadmap(input: {
+  gaps: { skill: string; drives: number; roles: string[] }[];
+  currentSkills: string[];
+}): Promise<Roadmap> {
+  return ollamaJSON<Roadmap>({
+    system:
+      "You are a friendly placement mentor. For each missing skill, give a short, realistic plan a student can start this week. Keep every field to one or two sentences. Do not invent courses, websites or certificates by name.",
+    prompt: `Student's current skills: ${input.currentSkills.join(", ") || "none listed"}
+Missing skills (with how many open drives ask for them):
+${input.gaps
+      .map((g) => `- ${g.skill}: wanted by ${g.drives} drive(s) (${g.roles.join(", ")})`)
+      .join("\n")}`,
+    schemaHint: `{
+  "steps": [{"skill": string, "whyItMatters": string, "howToLearn": string, "miniProject": string}]
+}`,
+    temperature: 0.3,
+  });
+}
+
+/* ---------- Resume feedback ---------- */
+
+export interface ResumeFeedback {
+  strengths: string[];
+  improvements: { issue: string; suggestion: string }[];
+}
+
+export async function reviewResume(resumeText: string): Promise<ResumeFeedback> {
+  return ollamaJSON<ResumeFeedback>({
+    system:
+      "You review a student's resume for a campus placement. Give 2-3 genuine strengths and 3-5 specific, concrete improvements (e.g. add measurable results, name the technologies used, shorten vague bullets). Refer to actual content in the resume. Be encouraging, never harsh. Do not rewrite the whole resume.",
+    prompt: resumeText.slice(0, 12000),
+    schemaHint: `{
+  "strengths": string[],
+  "improvements": [{"issue": string, "suggestion": string}]
+}`,
+    temperature: 0.3,
+  });
+}

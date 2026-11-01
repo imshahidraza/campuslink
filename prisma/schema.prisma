@@ -80,7 +80,11 @@ enum ApplicationStage {
   SHORTLISTED
   INTERVIEW
   SELECTED
-  OFFER
+  OFFER_REQUESTED // recruiter asked the TPO to extend an offer
+  OFFER_SENT // TPO forwarded it to the student — awaiting their response
+  OFFER_ACCEPTED // student accepted — placed, pending joining formalities
+  OFFER_DECLINED // student declined — does NOT block other drives
+  JOINED // documents verified + joining confirmed
   REJECTED
 }
 
@@ -90,12 +94,18 @@ enum NotificationType {
   INTERVIEW_SCHEDULE
   DOCUMENT_DEADLINE
   OFFER_UPDATE
+  SPECIAL_CONSIDERATION
+  OFFER_RESPONSE
   GENERAL
 }
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
+  // Optional, unverified (no OTP). Collected for TPO and Recruiter accounts so
+  // they can sign in with a phone number instead of email. Stored normalized
+  // (+<countrycode><number>); students sign in with their roll number instead.
+  phone     String?  @unique
   password  String
   role      Role
   name      String
@@ -126,6 +136,8 @@ model Student {
   // Student-provided career data
   resumeText     String?
   resumeSkills   String[] @default([])
+  // The uploaded PDF itself lives in its own table so normal student queries never load the bytes.
+  resume         Resume?
   skills         String[] @default([])
   projects       Json?    // [{title, description, tech[]}]
   certifications String[] @default([])
@@ -144,6 +156,12 @@ model Student {
   improvementAreas String[] @default([])
   readinessUpdatedAt DateTime?
 
+  // On-demand AI outputs, cached so a click doesn't recompute (and a slow local model isn't hit twice)
+  roadmap          Json?     // { steps: [...], basedOn: [...] } — skills to learn next, from open drives
+  roadmapUpdatedAt DateTime?
+  resumeFeedback   Json?     // { strengths: string[], improvements: [...] }
+  resumeFeedbackAt DateTime?
+
   applications  Application[]
   notifications Notification[]
 
@@ -161,7 +179,8 @@ model Recruiter {
   website     String?
   industry    String?
 
-  drives Drive[]
+  drives        Drive[]
+  notifications RecruiterNotification[]
 
   createdAt DateTime @default(now())
 }
@@ -214,6 +233,10 @@ model Application {
   specialConsideration     Boolean @default(false)
   specialConsiderationNote String?
 
+  // Optional constructive note shown to the student on rejection — framed as
+  // growth ("work on communication"), never as a dead-end failure.
+  feedbackNote String?
+
   // AI matching output
   fitScore          Int?
   matchedSkills      String[] @default([])
@@ -221,10 +244,14 @@ model Application {
   relevantProjects   String[] @default([])
   matchExplanation   String?
 
-  offerPackage String?
-  offerStatus  String? // Offer Received / Accepted / Declined
-  documentsVerified Boolean @default(false)
-  joined       Boolean @default(false)
+  // Offer pipeline — stage (above) is the single source of truth for where
+  // things stand; these are just the "when" for each step, for display.
+  offerPackage      String? // set once, by the recruiter, when they request the offer
+  offerRequestedAt  DateTime?
+  offerSentAt       DateTime?
+  offerRespondedAt  DateTime?
+  documentsVerified Boolean   @default(false)
+  joined            Boolean   @default(false)
 
   interviews Interview[]
 
@@ -262,4 +289,40 @@ model Notification {
   message   String
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
+}
+
+/// Broadcast to every TPO at this college (there's typically just one, but
+/// supports more). Single shared `read` flag is a deliberate simplification
+/// for this single-college build, not a per-TPO read receipt.
+model TpoNotification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}
+
+model RecruiterNotification {
+  id          String           @id @default(cuid())
+  recruiterId String
+  recruiter   Recruiter        @relation(fields: [recruiterId], references: [id])
+  type        NotificationType
+  title       String
+  message     String
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+}
+
+/// The student's uploaded resume PDF, kept in its own table so list queries never
+/// pull the file bytes. Viewable only via /api/resume/[studentId], which checks
+/// who is asking (student: own, TPO: any, recruiter: only their drives' applicants).
+model Resume {
+  id         String   @id @default(cuid())
+  studentId  String   @unique
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fileName   String
+  size       Int
+  data       Bytes
+  uploadedAt DateTime @default(now())
 }

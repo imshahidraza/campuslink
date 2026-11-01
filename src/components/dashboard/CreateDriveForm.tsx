@@ -39,15 +39,15 @@ export function CreateDriveForm() {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Minimum CGPA" name="minCgpa" placeholder="e.g. 7.0" />
         <Field label="Max backlogs" name="maxBacklogs" placeholder="e.g. 0" />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Eligible specializations (comma-separated)" name="eligibleBranches" placeholder="CSE, IT, ECE" />
         <Field label="Eligible grad years (comma-separated)" name="eligibleGradYears" placeholder="2026" />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Drive date" name="driveDate" type="date" />
         <Field label="Venue" name="venue" placeholder="Seminar Hall / Online" />
       </div>

@@ -139,13 +139,26 @@ export async function runBulkMatchingForDriveAction(driveId: string) {
 
 export async function updateApplicationStageAction(
   applicationId: string,
-  stage: "ELIGIBLE" | "SHORTLISTED" | "INTERVIEW" | "SELECTED" | "OFFER" | "REJECTED"
+  stage: "ELIGIBLE" | "SHORTLISTED" | "INTERVIEW" | "SELECTED" | "REJECTED",
+  feedbackNote?: string
 ) {
   const session = await getSession();
   assertAnyRole(session, ["TPO", "RECRUITER"]);
+  // Recruiters may only act on applications for their own drives (IDOR guard).
+  if (session.role === "RECRUITER") {
+    const recruiter = await prisma.recruiter.findUniqueOrThrow({ where: { userId: session.userId } });
+    const existing = await prisma.application.findUniqueOrThrow({
+      where: { id: applicationId },
+      select: { drive: { select: { recruiterId: true } } },
+    });
+    if (existing.drive.recruiterId !== recruiter.id) {
+      throw new Error("You can only update candidates on your own drives.");
+    }
+  }
+  const note = stage === "REJECTED" ? feedbackNote?.trim().slice(0, 500) : undefined;
   const app = await prisma.application.update({
     where: { id: applicationId },
-    data: { stage },
+    data: { stage, ...(note ? { feedbackNote: note } : {}) },
     include: { student: true, drive: true },
   });
 
@@ -159,6 +172,16 @@ export async function updateApplicationStageAction(
       },
     });
     await prisma.student.update({ where: { id: app.studentId }, data: { placementStatus: "SHORTLISTED" } });
+  }
+  if (stage === "REJECTED" && note) {
+    await prisma.notification.create({
+      data: {
+        studentId: app.studentId,
+        type: "GENERAL",
+        title: `Feedback on your ${app.drive.jobRole} application`,
+        message: note,
+      },
+    });
   }
   if (stage === "SELECTED") {
     await prisma.student.update({ where: { id: app.studentId }, data: { placementStatus: "SELECTED" } });
@@ -190,9 +213,23 @@ export async function addSpecialConsiderationAction(driveId: string, studentId: 
     data: { specialConsideration: true, specialConsiderationNote: note.trim() || null },
   });
 
+  const [drive, student] = await Promise.all([
+    prisma.drive.findUniqueOrThrow({ where: { id: driveId } }),
+    prisma.student.findUniqueOrThrow({ where: { id: studentId } }),
+  ]);
+  await prisma.recruiterNotification.create({
+    data: {
+      recruiterId: drive.recruiterId,
+      type: "SPECIAL_CONSIDERATION",
+      title: "Your placement cell recommended a candidate",
+      message: `${student.rollNo} was specially recommended for ${drive.jobRole}${note.trim() ? `: "${note.trim()}"` : "."}`,
+    },
+  });
+
   revalidatePath(`/tpo/drives/${driveId}`);
   revalidatePath(`/recruiter/drives/${driveId}`);
   revalidatePath("/student/drives");
+  revalidatePath("/recruiter/notifications");
   return updated;
 }
 

@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { CollegeSetupForm } from "@/components/dashboard/CollegeSetupForm";
+import { DemoDataPanel } from "@/components/dashboard/DemoDataPanel";
+import { demoStatusAction } from "@/lib/actions/demo";
 
 export default async function CollegeSetupPage() {
   const specializations = await prisma.specialization.findMany({ orderBy: { name: "asc" } });
+  const demo = await demoStatusAction();
 
   return (
     <div>
@@ -19,6 +22,15 @@ export default async function CollegeSetupPage() {
         </CardHeader>
         <CardContent>
           <CollegeSetupForm initialSpecializations={specializations} />
+        </CardContent>
+      </Card>
+
+      <Card className="mt-5 max-w-3xl">
+        <CardHeader>
+          <CardTitle>Demo data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DemoDataPanel demoLoaded={demo.demoLoaded} realStudents={demo.realStudents} />
         </CardContent>
       </Card>
     </div>

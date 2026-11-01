@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, Badge } from "@/components/ui/Card";
+import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/Card";
+import { AutoScheduleForm } from "@/components/dashboard/AutoScheduleForm";
 import { AlertTriangle } from "lucide-react";
 
 export default async function SchedulingPage() {
@@ -7,6 +8,14 @@ export default async function SchedulingPage() {
     include: { drive: true, application: { include: { student: { include: { user: true } } } } },
     orderBy: { scheduledAt: "asc" },
   });
+
+  const drives = await prisma.drive.findMany({
+    select: { id: true, jobRole: true, companyName: true, _count: { select: { applications: { where: { stage: "SHORTLISTED" } } } } },
+    orderBy: { createdAt: "desc" },
+  });
+  const driveOptions = drives
+    .filter((d) => d._count.applications > 0)
+    .map((d) => ({ id: d.id, label: `${d.jobRole} · ${d.companyName}`, shortlisted: d._count.applications }));
 
   return (
     <div>
@@ -17,6 +26,15 @@ export default async function SchedulingPage() {
       </p>
 
       <Card className="mt-8">
+        <CardHeader>
+          <CardTitle>Auto-schedule a drive</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AutoScheduleForm drives={driveOptions} />
+        </CardContent>
+      </Card>
+
+      <Card className="mt-5">
         <CardContent className="pt-5 space-y-3">
           {interviews.length === 0 && (
             <p className="text-sm text-muted">

@@ -4,6 +4,7 @@ import type { ComponentProps } from "react";
 export function Card({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
+      data-reveal
       className={cn(
         "rounded-2xl border border-border-soft bg-white shadow-sm shadow-black/[0.02]",
         className

@@ -9,6 +9,7 @@ import {
 import { ApplicationReviewRow } from "@/components/dashboard/ApplicationReviewRow";
 import { SpecialConsiderationPanel } from "@/components/dashboard/SpecialConsiderationPanel";
 import { stageLabel } from "@/lib/utils";
+import { FileDown } from "lucide-react";
 
 export default async function TpoDriveDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,7 +19,7 @@ export default async function TpoDriveDetail({ params }: { params: Promise<{ id:
       include: {
         recruiter: true,
         applications: {
-          include: { student: { include: { user: true } } },
+          include: { student: { include: { user: true, resume: { select: { id: true } } } } },
           orderBy: { fitScore: "desc" },
         },
       },
@@ -43,12 +44,20 @@ export default async function TpoDriveDetail({ params }: { params: Promise<{ id:
 
   return (
     <div>
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-ink">{drive.jobRole}</h1>
           <p className="text-muted text-sm mt-1">{drive.companyName}</p>
         </div>
-        <Badge tone="brand">{stageLabel(drive.status)}</Badge>
+        <div className="flex items-center gap-3">
+          <a
+            href={`/api/drives/${drive.id}/report`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border-soft bg-white px-3 py-1.5 text-xs text-ink hover:bg-surface-2"
+          >
+            <FileDown className="h-3.5 w-3.5" /> Download report (PDF)
+          </a>
+          <Badge tone="brand">{stageLabel(drive.status)}</Badge>
+        </div>
       </div>
 
       <div className="mt-6">

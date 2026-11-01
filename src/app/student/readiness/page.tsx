@@ -1,5 +1,6 @@
 import { requireStudentOrRedirect } from "@/lib/auth";
 import { ReadinessPanel } from "@/components/dashboard/ReadinessPanel";
+import { RoadmapCard, type RoadmapData } from "@/components/dashboard/RoadmapCard";
 
 export default async function ReadinessPage() {
   const { student } = await requireStudentOrRedirect();
@@ -22,6 +23,12 @@ export default async function ReadinessPage() {
       </p>
       <div className="mt-8">
         <ReadinessPanel existing={existing} preferredRoles={student.preferredRoles} />
+      </div>
+      <div className="mt-5">
+        <RoadmapCard
+          existing={(student.roadmap as RoadmapData | null) ?? null}
+          updatedAt={student.roadmapUpdatedAt ? student.roadmapUpdatedAt.toISOString() : null}
+        />
       </div>
     </div>
   );

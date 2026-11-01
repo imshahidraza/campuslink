@@ -113,7 +113,21 @@ body {
   color: transparent;
   -webkit-text-stroke: 1.5px rgba(124, 79, 209, 0.28);
 }
+/* Phone scroll-reveal (driven by ScrollReveal.tsx; only phones/touch devices get these classes) */
+.reveal-pre {
+  opacity: 0;
+  transform: translate3d(0, 26px, 0) scale(0.985);
+}
+.reveal-pre.reveal-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
 @media (prefers-reduced-motion: reduce) {
+  .reveal-pre {
+    opacity: 1;
+    transform: none;
+  }
   [data-parallax],
   [data-tilt] {
     transform: none !important;

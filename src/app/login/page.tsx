@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, GraduationCap, Users, Building2 } from "lucide-r
 import { Button } from "@/components/ui/Button";
 import { PasswordField } from "@/components/ui/PasswordField";
 import { ParallaxController } from "@/components/landing/ParallaxController";
+import { ScrollReveal } from "@/components/ui/ScrollReveal";
 import { Petal, Ring, Plus, DotGrid } from "@/components/landing/Symbols";
 
 type Role = "STUDENT" | "TPO" | "RECRUITER";
@@ -38,6 +39,7 @@ export default function LoginPage() {
   const [college, setCollege] = useState<{ name: string } | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [via, setVia] = useState<"email" | "phone">("email"); // sign-in identifier for TPO / Recruiter
 
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
   const roleInfo = ROLES.find((r) => r.id === role);
@@ -56,7 +58,7 @@ export default function LoginPage() {
       const res = await fetch(mode === "login" ? "/api/auth/login" : "/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...f, role }),
+        body: JSON.stringify({ ...f, role, method: mode === "login" && role !== "STUDENT" ? via : undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -77,6 +79,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-hero-gradient relative overflow-hidden flex items-center justify-center px-6 py-16">
       <ParallaxController />
+      <ScrollReveal />
       <div data-parallax data-speed="0.2" data-depth="14" className="absolute -top-24 -right-24">
         <Petal className="h-[420px] w-[420px] text-brand-500/25" />
       </div>
@@ -95,8 +98,8 @@ export default function LoginPage() {
 
         <div className={`flex items-center gap-2.5 text-white mb-2 ${!role ? "justify-center" : ""}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.jpeg" alt="C-link" className="h-10 w-10 rounded-lg" />
-          <span className="font-serif text-3xl tracking-tight">C-link</span>
+          <img src="/logo.jpeg" alt="C-Link" className="h-10 w-10 rounded-lg" />
+          <span className="font-serif text-3xl tracking-tight">C-Link</span>
         </div>
 
         {!role && (
@@ -165,9 +168,36 @@ export default function LoginPage() {
                   <input required className={inputCls} value={f.rollNo || ""} onChange={(e) => set("rollNo", e.target.value)} placeholder="e.g. 21CS101" />
                 </Field>
               ) : (
-                <Field label="Email">
-                  <input required type="email" className={inputCls} value={f.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="you@example.com" />
-                </Field>
+                <>
+                  {mode === "login" && (
+                    <div className="grid grid-cols-2 rounded-full bg-white/5 p-1 text-xs">
+                      {(["email", "phone"] as const).map((v) => (
+                        <button
+                          type="button"
+                          key={v}
+                          onClick={() => { setVia(v); setError(null); }}
+                          className={`rounded-full py-1.5 transition-colors ${via === v ? "bg-white/90 text-brand-900 font-medium" : "text-white/60 hover:text-white"}`}
+                        >
+                          {v === "email" ? "Use email" : "Use phone number"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {mode === "login" && via === "phone" ? (
+                    <Field label="Phone number">
+                      <input required type="tel" inputMode="tel" autoComplete="tel" className={inputCls} value={f.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="e.g. 98765 43210" />
+                    </Field>
+                  ) : (
+                    <Field label="Email">
+                      <input required type="email" className={inputCls} value={f.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="you@example.com" />
+                    </Field>
+                  )}
+                  {mode === "register" && role !== "STUDENT" && (
+                    <Field label="Phone number">
+                      <input required type="tel" inputMode="tel" autoComplete="tel" className={inputCls} value={f.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="e.g. 98765 43210" />
+                    </Field>
+                  )}
+                </>
               )}
               <Field label="Password">
                 <PasswordField
@@ -236,6 +266,9 @@ export default function LoginPage() {
             </form>
           </div>
         )}
+        <p className={`mt-6 text-xs text-white/40 ${!role ? "text-center" : ""}`}>
+          <Link href="/privacy" className="underline underline-offset-4 hover:text-white/70">How we handle your data</Link>
+        </p>
       </div>
     </div>
   );

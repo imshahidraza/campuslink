@@ -1,6 +1,6 @@
 import { requireStudentOrRedirect } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { checkEligibility } from "@/lib/rules";
+import { checkEligibility, eligibilityFixes } from "@/lib/rules";
 import { StudentDriveCard } from "@/components/dashboard/StudentDriveCard";
 
 export default async function DrivesPage() {
@@ -15,15 +15,15 @@ export default async function DrivesPage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const drivesWithEligibility = openDrives.map((d) => ({
-    drive: d,
-    eligibility: checkEligibility(student, {
+  const drivesWithEligibility = openDrives.map((d) => {
+    const rule = {
       minCgpa: d.minCgpa,
       maxBacklogs: d.maxBacklogs,
       eligibleBranches: d.eligibleBranches,
       eligibleGradYears: d.eligibleGradYears,
-    }),
-  }));
+    };
+    return { drive: d, eligibility: checkEligibility(student, rule), fixes: eligibilityFixes(student, rule) };
+  });
 
   const appByDrive = new Map(student.applications.map((a) => [a.driveId, a]));
   const eligibleCount = drivesWithEligibility.filter(
@@ -39,7 +39,7 @@ export default async function DrivesPage() {
       </p>
 
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {drivesWithEligibility.map(({ drive, eligibility }) => {
+        {drivesWithEligibility.map(({ drive, eligibility, fixes }) => {
           const app = appByDrive.get(drive.id);
           return (
             <StudentDriveCard
@@ -55,6 +55,7 @@ export default async function DrivesPage() {
               }}
               eligible={eligibility.eligible || Boolean(app?.specialConsideration)}
               ineligibleReasons={eligibility.reasons}
+              ineligibleFixes={fixes}
               specialConsideration={Boolean(app?.specialConsideration)}
               existing={
                 app

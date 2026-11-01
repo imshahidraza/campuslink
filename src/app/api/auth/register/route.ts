@@ -6,12 +6,28 @@ import { prisma } from "@/lib/prisma";
 import { setSessionCookie } from "@/lib/auth";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { safeErrorMessage } from "@/lib/safeError";
+import { normalizePhone } from "@/lib/phone";
 
 const base = {
   name: z.string().trim().min(2, "Please enter your full name.").max(100),
   email: z.string().trim().toLowerCase().email("Please enter a valid email address.").max(200),
   password: z.string().min(6, "Password must be at least 6 characters.").max(200),
 };
+
+// TPO and Recruiter accounts must give a phone number (stored unverified, used as
+// an alternative sign-in). Normalized so formatting differences can't create duplicates.
+const phoneField = z
+  .string()
+  .trim()
+  .min(1, "Please enter your phone number.")
+  .transform((v, ctx) => {
+    const n = normalizePhone(v);
+    if (!n) {
+      ctx.addIssue({ code: "custom", message: "Please enter a valid phone number." });
+      return z.NEVER;
+    }
+    return n;
+  });
 
 const schema = z.discriminatedUnion("role", [
   // Students no longer type academic data — it comes from the TPO's pending roster,
@@ -26,12 +42,14 @@ const schema = z.discriminatedUnion("role", [
   z.object({
     role: z.literal("TPO"),
     ...base,
+    phone: phoneField,
     collegeName: z.string().trim().max(200).optional(),
     collegeEmailDomain: z.string().trim().max(200).optional(),
   }),
   z.object({
     role: z.literal("RECRUITER"),
     ...base,
+    phone: phoneField,
     companyName: z.string().trim().min(2, "Please enter your company name.").max(200),
     industry: z.string().trim().max(100).optional(),
   }),
@@ -66,8 +84,13 @@ export async function POST(req: NextRequest) {
         throw new Error("An account with this email already exists. Try signing in.");
       }
 
+      const phone = data.role === "STUDENT" ? null : data.phone;
+      if (phone && (await tx.user.findUnique({ where: { phone } }))) {
+        throw new Error("An account with this phone number already exists. Try signing in.");
+      }
+
       const created = await tx.user.create({
-        data: { email: data.email, password: passwordHash, role: data.role, name: data.name },
+        data: { email: data.email, phone, password: passwordHash, role: data.role, name: data.name },
       });
 
       if (data.role === "TPO") {
@@ -131,7 +154,7 @@ export async function POST(req: NextRequest) {
     // it a friendly, specific response instead of falling through to the generic one.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return NextResponse.json(
-        { error: "That email or roll number was just registered by someone else. Please try again." },
+        { error: "That email, phone number or roll number was just registered by someone else. Please try again." },
         { status: 409 }
       );
     }

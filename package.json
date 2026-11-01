@@ -20,10 +20,12 @@
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.48.0",
     "next": "16.3.6",
+    "pdf-lib": "^1.17.1",
     "prisma": "^6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.7.0",
+    "unpdf": "^1.9.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {

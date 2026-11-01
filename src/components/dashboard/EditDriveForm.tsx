@@ -61,15 +61,15 @@ export function EditDriveForm({ driveId, defaults }: Props) {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Minimum CGPA" name="minCgpa" defaultValue={defaults.minCgpa} />
         <Field label="Max backlogs" name="maxBacklogs" defaultValue={defaults.maxBacklogs} />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Eligible specializations (comma-separated)" name="eligibleBranches" defaultValue={defaults.eligibleBranches} />
         <Field label="Eligible grad years (comma-separated)" name="eligibleGradYears" defaultValue={defaults.eligibleGradYears} />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Drive date" name="driveDate" type="date" defaultValue={defaults.driveDate} />
         <Field label="Venue" name="venue" defaultValue={defaults.venue} />
       </div>

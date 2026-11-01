@@ -14,6 +14,9 @@ import { useEffect } from "react";
 export function ParallaxController() {
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Phones/touch: the pointer-follow, tilt and scroll-parallax feel janky there, so the
+    // decorative layers stay still and cards use the scroll-reveal instead (ScrollReveal.tsx).
+    if (window.matchMedia("(max-width: 767px), (hover: none)").matches) return;
 
     type Item = { el: HTMLElement; speed: number; x: number; rotate: number; depth: number; base: number };
     let items: Item[] = [];

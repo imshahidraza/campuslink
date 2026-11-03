@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { parseJobDescription } from "@/lib/ai";
+import { assertCanManageDrive } from "@/lib/access";
 
 async function requireRecruiter() {
   const session = await getSession();
@@ -130,6 +131,7 @@ export async function updateDriveStatusAction(
   const session = await getSession();
   assertAnyRole(session, ["TPO", "RECRUITER"]);
   const previous = await prisma.drive.findUniqueOrThrow({ where: { id: driveId } });
+  await assertCanManageDrive(session, previous.recruiterId);
   await prisma.drive.update({ where: { id: driveId }, data: { status } });
 
   if (status === "OPEN" && previous.status !== "OPEN") {

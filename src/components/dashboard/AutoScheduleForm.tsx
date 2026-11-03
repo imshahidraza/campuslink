@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { CalendarClock, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { DayLoadHint } from "./DayLoadHint";
 import { previewAutoScheduleAction, confirmAutoScheduleAction, type AutoSchedulePlan } from "@/lib/actions/scheduling";
 
 interface DriveOption {
@@ -97,6 +98,7 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
         </F>
         <F label="Date">
           <input type="date" className={inputCls} value={f.date} onChange={(e) => set("date", e.target.value)} />
+          <DayLoadHint date={f.date} />
         </F>
         <div className="grid grid-cols-2 gap-3">
           <F label="Start">

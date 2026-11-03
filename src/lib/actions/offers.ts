@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole } from "@/lib/auth";
-import { checkSchedulingConflicts } from "@/lib/rules";
+import { checkSchedulingConflicts, OFFER_PIPELINE_STAGES } from "@/lib/rules";
 
 async function requireTpo() {
   const session = await getSession();
@@ -11,18 +11,30 @@ async function requireTpo() {
   return session;
 }
 
+/**
+ * Schedules one interview. If the slot clashes (same student, panel or venue), nothing is saved and the
+ * clash is returned so the TPO can decide. The TPO keeps the final say: sending `override=1` (with an
+ * optional reason) saves it anyway, marked as a deliberate TPO override.
+ */
 export async function scheduleInterviewAction(formData: FormData) {
   await requireTpo();
 
   const applicationId = String(formData.get("applicationId"));
   const driveId = String(formData.get("driveId"));
-  const stage = String(formData.get("stage") || "Interview");
+  const stage = String(formData.get("stage") || "Interview").trim().slice(0, 60) || "Interview";
   const scheduledAt = new Date(String(formData.get("scheduledAt")));
+  if (Number.isNaN(scheduledAt.getTime())) throw new Error("Please choose a valid date and time.");
   const durationMins = Math.min(240, Math.max(10, Number(formData.get("durationMins")) || 30));
-  const venue = String(formData.get("venue") || "") || null;
-  const panel = String(formData.get("panel") || "") || null;
+  const venue = String(formData.get("venue") || "").trim() || null;
+  const panel = String(formData.get("panel") || "").trim() || null;
+  const override = String(formData.get("override") || "") === "1";
+  const overrideReason = String(formData.get("overrideReason") || "").trim().slice(0, 300) || null;
 
   const application = await prisma.application.findUniqueOrThrow({ where: { id: applicationId } });
+  if ((OFFER_PIPELINE_STAGES as readonly string[]).includes(application.stage)) {
+    throw new Error("This candidate is already in the offer process, so an interview can't be scheduled.");
+  }
+  if (application.driveId !== driveId) throw new Error("That candidate doesn't belong to this drive.");
 
   const dayStart = new Date(scheduledAt);
   dayStart.setHours(0, 0, 0, 0);
@@ -35,13 +47,7 @@ export async function scheduleInterviewAction(formData: FormData) {
   });
 
   const conflict = checkSchedulingConflicts(
-    {
-      studentId: application.studentId,
-      venue,
-      panel,
-      scheduledAt,
-      durationMins,
-    },
+    { studentId: application.studentId, venue, panel, scheduledAt, durationMins },
     existing.map((e) => ({
       id: e.id,
       studentId: e.application.studentId,
@@ -51,6 +57,11 @@ export async function scheduleInterviewAction(formData: FormData) {
       durationMins: e.durationMins,
     }))
   );
+
+  // Clash and no explicit override yet: save nothing, hand the details back for the TPO to decide.
+  if (conflict.hasConflict && !override) {
+    return { saved: false as const, conflict };
+  }
 
   const interview = await prisma.interview.create({
     data: {
@@ -63,6 +74,8 @@ export async function scheduleInterviewAction(formData: FormData) {
       panel,
       hasConflict: conflict.hasConflict,
       conflictNote: conflict.notes.join("; ") || null,
+      overridden: conflict.hasConflict,
+      overrideReason: conflict.hasConflict ? overrideReason : null,
     },
   });
 
@@ -80,7 +93,7 @@ export async function scheduleInterviewAction(formData: FormData) {
   revalidatePath("/tpo/scheduling");
   revalidatePath(`/tpo/drives/${driveId}`);
   revalidatePath("/student/journey");
-  return { interview, conflict };
+  return { saved: true as const, interview, conflict };
 }
 
 /* ======================= Offer pipeline =======================

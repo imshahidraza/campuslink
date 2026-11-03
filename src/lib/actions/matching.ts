@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { matchCandidateToJob } from "@/lib/ai";
-import { checkEligibility } from "@/lib/rules";
+import { checkEligibility, OFFER_PIPELINE_STAGES } from "@/lib/rules";
+import { assertCanManageDrive } from "@/lib/access";
 import type { Student } from "@prisma/client";
 
 function projectsToText(student: Student): string {
@@ -110,6 +111,7 @@ export async function runBulkMatchingForDriveAction(driveId: string) {
   assertAnyRole(session, ["TPO", "RECRUITER"]);
 
   const drive = await prisma.drive.findUniqueOrThrow({ where: { id: driveId } });
+  await assertCanManageDrive(session, drive.recruiterId);
   const students = await prisma.student.findMany({ where: { placementStatus: { not: "JOINED" } } });
 
   const rule = {
@@ -144,16 +146,15 @@ export async function updateApplicationStageAction(
 ) {
   const session = await getSession();
   assertAnyRole(session, ["TPO", "RECRUITER"]);
+  const existing = await prisma.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    select: { stage: true, drive: { select: { recruiterId: true } } },
+  });
   // Recruiters may only act on applications for their own drives (IDOR guard).
-  if (session.role === "RECRUITER") {
-    const recruiter = await prisma.recruiter.findUniqueOrThrow({ where: { userId: session.userId } });
-    const existing = await prisma.application.findUniqueOrThrow({
-      where: { id: applicationId },
-      select: { drive: { select: { recruiterId: true } } },
-    });
-    if (existing.drive.recruiterId !== recruiter.id) {
-      throw new Error("You can only update candidates on your own drives.");
-    }
+  await assertCanManageDrive(session, existing.drive.recruiterId);
+  // Once a candidate is in the offer process, hiring-stage changes are locked (the Offers page owns it).
+  if ((OFFER_PIPELINE_STAGES as readonly string[]).includes(existing.stage)) {
+    throw new Error("This candidate is already in the offer process, so their stage can't be changed here.");
   }
   const note = stage === "REJECTED" ? feedbackNote?.trim().slice(0, 500) : undefined;
   const app = await prisma.application.update({

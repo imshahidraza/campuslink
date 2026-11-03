@@ -276,6 +276,9 @@ model Interview {
 
   hasConflict Boolean @default(false)
   conflictNote String?
+  // The TPO knowingly scheduled this despite a clash (e.g. the recruiter can only come then).
+  overridden     Boolean @default(false)
+  overrideReason String?
 
   createdAt DateTime @default(now())
 }

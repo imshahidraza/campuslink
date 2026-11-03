@@ -52,8 +52,18 @@ export default async function SchedulingPage() {
                   {iv.venue ? ` · ${iv.venue}` : ""}
                   {iv.panel ? ` · Panel: ${iv.panel}` : ""}
                 </p>
+                {iv.overridden && (
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Scheduled despite: {iv.conflictNote}
+                    {iv.overrideReason ? ` — Reason: ${iv.overrideReason}` : ""}
+                  </p>
+                )}
               </div>
-              {iv.hasConflict ? (
+              {iv.overridden ? (
+                <Badge tone="warning" className="flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> TPO override
+                </Badge>
+              ) : iv.hasConflict ? (
                 <Badge tone="danger" className="flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" /> Conflict
                 </Badge>

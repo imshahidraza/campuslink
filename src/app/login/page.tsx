@@ -37,6 +37,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("login");
   const [f, setF] = useState<Record<string, string>>({});
   const [college, setCollege] = useState<{ name: string } | null | undefined>(undefined);
+  const [tpoSignup, setTpoSignup] = useState<"code" | "first" | "closed">("first");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [via, setVia] = useState<"email" | "phone">("email"); // sign-in identifier for TPO / Recruiter
@@ -46,7 +47,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (role === "TPO" && mode === "register" && college === undefined) {
-      fetch("/api/college").then((r) => r.json()).then((d) => setCollege(d.college)).catch(() => setCollege(null));
+      fetch("/api/college").then((r) => r.json()).then((d) => { setCollege(d.college); setTpoSignup(d.tpoSignup ?? "first"); }).catch(() => setCollege(null));
     }
   }, [role, mode, college]);
 
@@ -225,6 +226,22 @@ export default function LoginPage() {
               {mode === "register" && role === "TPO" && (
                 <>
                   {collegeLoading && <p className="text-xs text-white/45">Checking for an existing college...</p>}
+                  {!collegeLoading && tpoSignup === "closed" && (
+                    <p className="text-sm text-amber-200 bg-amber-500/10 rounded-xl px-4 py-2.5">
+                      Placement cell signup is closed. Ask your administrator to set a TPO signup code.
+                    </p>
+                  )}
+                  {!collegeLoading && tpoSignup === "code" && (
+                    <Field label="Placement cell signup code">
+                      <PasswordField
+                        required
+                        className={inputCls}
+                        value={f.tpoCode || ""}
+                        onChange={(v) => set("tpoCode", v)}
+                        placeholder="Given by your administrator"
+                      />
+                    </Field>
+                  )}
                   {!collegeLoading && college && (
                     <p className="text-sm text-brand-200 bg-white/5 rounded-xl px-4 py-2.5">
                       Joining <span className="font-medium">{college.name}</span> — already set up by another TPO.
@@ -260,7 +277,7 @@ export default function LoginPage() {
 
               {error && <p className="text-rose-300 text-sm">{error}</p>}
 
-              <Button type="submit" className="w-full" size="lg" disabled={loading || collegeLoading}>
+              <Button type="submit" className="w-full" size="lg" disabled={loading || collegeLoading || (role === "TPO" && mode === "register" && tpoSignup === "closed")}>
                 {loading ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
               </Button>
             </form>

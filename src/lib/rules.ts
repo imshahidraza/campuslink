@@ -257,6 +257,9 @@ export const APPLICATION_STAGES = [
   "JOINED",
 ] as const;
 
+/** Once a candidate reaches any of these, hiring-stage changes are locked; the Offers page owns them. */
+export const OFFER_PIPELINE_STAGES = ["OFFER_REQUESTED", "OFFER_SENT", "OFFER_ACCEPTED", "OFFER_DECLINED", "JOINED"] as const;
+
 /** Terminal "branch" stages that fall off the forward stepper entirely. */
 export const TERMINAL_STAGES = ["REJECTED", "OFFER_DECLINED"] as const;
 

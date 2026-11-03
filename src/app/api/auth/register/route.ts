@@ -7,6 +7,7 @@ import { setSessionCookie } from "@/lib/auth";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { safeErrorMessage } from "@/lib/safeError";
 import { normalizePhone } from "@/lib/phone";
+import { createHash, timingSafeEqual } from "crypto";
 
 const base = {
   name: z.string().trim().min(2, "Please enter your full name.").max(100),
@@ -43,6 +44,7 @@ const schema = z.discriminatedUnion("role", [
     role: z.literal("TPO"),
     ...base,
     phone: phoneField,
+    tpoCode: z.string().max(200).optional(),
     collegeName: z.string().trim().max(200).optional(),
     collegeEmailDomain: z.string().trim().max(200).optional(),
   }),
@@ -54,6 +56,13 @@ const schema = z.discriminatedUnion("role", [
     industry: z.string().trim().max(100).optional(),
   }),
 ]);
+
+/** Compares two secrets without leaking, through timing, how much of the guess was right. */
+function sameSecret(a: string, b: string) {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
 
 function normalizeDomain(input: string) {
   return input.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^@/, "").replace(/\/.*$/, "");
@@ -75,6 +84,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid input." }, { status: 400 });
   }
   const data = parsed.data;
+
+  // Placement-cell (TPO) accounts can see every student's records, so they are never open to the public:
+  //  - TPO_SIGNUP_CODE set  -> the correct code is required (even for the first TPO);
+  //  - not set              -> only the very first TPO can register (to bootstrap); after that, signup is closed.
+  if (data.role === "TPO") {
+    const code = process.env.TPO_SIGNUP_CODE;
+    if (code) {
+      if (!sameSecret(data.tpoCode ?? "", code)) {
+        return NextResponse.json({ error: "That placement cell signup code is not correct." }, { status: 403 });
+      }
+    } else if (await prisma.college.findFirst({ select: { id: true } })) {
+      return NextResponse.json(
+        { error: "TPO signup is closed. Ask your administrator to set a TPO signup code." },
+        { status: 403 }
+      );
+    }
+  }
 
   const passwordHash = await bcrypt.hash(data.password, 10);
 

@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { stageLabel } from "@/lib/utils";
-import { Award } from "lucide-react";
+import { Award, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { RejectWithFeedback } from "./RejectWithFeedback";
 import { ViewResumeLink } from "./ViewResumeLink";
+import { DayLoadHint } from "./DayLoadHint";
 
 interface Props {
   application: {
@@ -47,6 +48,33 @@ export function ApplicationReviewRow({ application }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [dateValue, setDateValue] = useState("");
+  const [clash, setClash] = useState<{ notes: string[]; hard: boolean; data: FormData } | null>(null);
+  const [reason, setReason] = useState("");
+
+  /** Tries to schedule. On a clash nothing is saved; the TPO sees why and may choose "Schedule anyway". */
+  async function submitSchedule(formData: FormData, override: boolean) {
+    formData.set("applicationId", application.id);
+    formData.set("driveId", application.driveId);
+    if (override) {
+      formData.set("override", "1");
+      formData.set("overrideReason", reason);
+    }
+    try {
+      const r = await scheduleInterviewAction(formData);
+      if (!r.saved) {
+        setClash({ notes: r.conflict.notes, hard: r.conflict.notes.some((n) => n.startsWith("Student already")), data: formData });
+        return;
+      }
+      setClash(null);
+      setReason("");
+      setDateValue("");
+      setScheduling(false);
+      toast(r.conflict.hasConflict ? "Scheduled as a TPO override." : "Interview scheduled.");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
 
   function confirmReject(note: string) {
     startTransition(async () => {
@@ -158,17 +186,7 @@ export function ApplicationReviewRow({ application }: Props) {
 
       {scheduling && (
         <form
-          action={async (formData) => {
-            formData.set("applicationId", application.id);
-            formData.set("driveId", application.driveId);
-            const { conflict } = await scheduleInterviewAction(formData);
-            if (!conflict.hasConflict) {
-              setScheduling(false);
-              toast("Interview scheduled.");
-            } else {
-              toast(`Scheduled, but conflicts found: ${conflict.notes.join("; ")}`, "error");
-            }
-          }}
+          action={(formData) => submitSchedule(formData, false)}
           className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-surface rounded-lg p-3 border border-border-soft"
         >
           <label className="sm:col-span-2 text-xs text-muted">
@@ -177,7 +195,8 @@ export function ApplicationReviewRow({ application }: Props) {
           </label>
           <label className="text-xs text-muted">
             Date &amp; time
-            <input name="scheduledAt" type="datetime-local" className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink" required />
+            <input name="scheduledAt" type="datetime-local" onChange={(e) => { setDateValue(e.target.value); setClash(null); }} className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink" required />
+            <DayLoadHint date={dateValue} />
           </label>
           <label className="text-xs text-muted">
             Duration
@@ -197,9 +216,39 @@ export function ApplicationReviewRow({ application }: Props) {
             Interview panel
             <input name="panel" placeholder="e.g. Panel 1" className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink" />
           </label>
-          <Button type="submit" size="sm" className="sm:col-span-2 w-fit">
-            Confirm schedule
-          </Button>
+          {clash && (
+            <div className={`sm:col-span-2 rounded-lg border p-3 text-sm ${clash.hard ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+              <p className="flex items-center gap-1.5 font-medium">
+                <AlertTriangle className="h-4 w-4" /> {clash.hard ? "This clashes with the student's own schedule" : "This time clashes"}
+              </p>
+              <ul className="mt-1.5 list-disc list-inside text-xs space-y-0.5">
+                {clash.notes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+              {clash.hard && <p className="mt-1.5 text-xs">The student can&apos;t be in two places at once. You can still override if you have arranged it.</p>}
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                maxLength={300}
+                placeholder="Reason for the override (optional), e.g. recruiter is only free then"
+                className="mt-2 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink"
+              />
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button type="button" size="sm" disabled={isPending} onClick={() => startTransition(() => submitSchedule(clash.data, true))}>
+                  Schedule anyway
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setClash(null)}>
+                  Change the time
+                </Button>
+              </div>
+            </div>
+          )}
+          {!clash && (
+            <Button type="submit" size="sm" className="sm:col-span-2 w-fit">
+              Confirm schedule
+            </Button>
+          )}
         </form>
       )}
     </div>

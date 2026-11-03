@@ -188,3 +188,26 @@ export async function confirmAutoScheduleAction(input: AutoScheduleInput) {
   revalidatePath("/student/journey");
   return { scheduled: plan.rows.length, unscheduled: plan.unscheduled.length };
 }
+
+/** For the "busy day" hint under a date field: what is already scheduled on that day. TPO only. */
+export async function dayLoadAction(date: string) {
+  await requireTpo();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { count: 0, items: [] as { time: string; panel: string | null; venue: string | null }[] };
+  const start = new Date(`${date}T00:00:00`);
+  const end = new Date(`${date}T23:59:59.999`);
+  if (Number.isNaN(start.getTime())) return { count: 0, items: [] };
+  const rows = await prisma.interview.findMany({
+    where: { scheduledAt: { gte: start, lte: end } },
+    orderBy: { scheduledAt: "asc" },
+    select: { scheduledAt: true, panel: true, venue: true },
+    take: 200,
+  });
+  return {
+    count: rows.length,
+    items: rows.slice(0, 6).map((r) => ({
+      time: r.scheduledAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      panel: r.panel,
+      venue: r.venue,
+    })),
+  };
+}

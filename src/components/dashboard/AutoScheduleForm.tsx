@@ -27,17 +27,18 @@ function F({ label, children }: { label: string; children: React.ReactNode }) {
 export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  // Nothing is pre-filled: the TPO enters every value (examples appear only as grey placeholders).
   const [f, setF] = useState({
     driveId: drives[0]?.id ?? "",
-    round: "Interview",
+    round: "",
     date: "",
-    startTime: "09:00",
-    endTime: "17:00",
-    durationMins: "30",
-    gapMins: "5",
-    breakStart: "13:00",
-    breakEnd: "14:00",
-    panels: "Panel A @ Room 101\nPanel B @ Room 102",
+    startTime: "",
+    endTime: "",
+    durationMins: "",
+    gapMins: "",
+    breakStart: "",
+    breakEnd: "",
+    panels: "",
   });
   const [plan, setPlan] = useState<AutoSchedulePlan | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
           </select>
         </F>
         <F label="Round name">
-          <input className={inputCls} value={f.round} onChange={(e) => set("round", e.target.value)} maxLength={60} />
+          <input className={inputCls} value={f.round} onChange={(e) => set("round", e.target.value)} maxLength={60} placeholder="e.g. Technical round" />
         </F>
         <F label="Date">
           <input type="date" className={inputCls} value={f.date} onChange={(e) => set("date", e.target.value)} />
@@ -107,10 +108,10 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <F label="Minutes per interview">
-            <input type="number" min={10} max={240} className={inputCls} value={f.durationMins} onChange={(e) => set("durationMins", e.target.value)} />
+            <input type="number" min={10} max={240} className={inputCls} value={f.durationMins} onChange={(e) => set("durationMins", e.target.value)} placeholder="e.g. 30" />
           </F>
           <F label="Gap between (min)">
-            <input type="number" min={0} max={60} className={inputCls} value={f.gapMins} onChange={(e) => set("gapMins", e.target.value)} />
+            <input type="number" min={0} max={60} className={inputCls} value={f.gapMins} onChange={(e) => set("gapMins", e.target.value)} placeholder="e.g. 5" />
           </F>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -123,13 +124,13 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
         </div>
         <div className="sm:col-span-2">
           <F label="Panels — one per line, optionally with a room: “Panel A @ Room 101”">
-            <textarea rows={3} className={inputCls} value={f.panels} onChange={(e) => set("panels", e.target.value)} />
+            <textarea rows={3} className={inputCls} value={f.panels} onChange={(e) => set("panels", e.target.value)} placeholder={"Panel A @ Room 101\nPanel B @ Room 102"} />
           </F>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button size="sm" onClick={preview} disabled={isPending || !f.date}>
+        <Button size="sm" onClick={preview} disabled={isPending || !f.date || !f.startTime || !f.endTime || !f.durationMins || !f.panels.trim() || !f.round.trim()}>
           <CalendarClock className="h-4 w-4" />
           {isPending && !plan ? "Building..." : "Preview timetable"}
         </Button>

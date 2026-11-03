@@ -182,7 +182,7 @@ export function DashboardShell({
         )}
 
         {/* Desktop sidebar */}
-        <aside className="hidden md:flex w-64 shrink-0 bg-brand-950 flex-col">{sidebarContent}</aside>
+        <aside className="hidden md:flex w-64 shrink-0 bg-brand-950 flex-col sticky top-0 self-start h-dvh">{sidebarContent}</aside>
 
         <main className="flex-1 min-w-0">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">

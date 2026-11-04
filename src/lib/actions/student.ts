@@ -6,17 +6,32 @@ import { getSession, assertRole } from "@/lib/auth";
 import { parseResume, analyzeReadiness, generatePrepPlan, generateRoadmap, reviewResume } from "@/lib/ai";
 import { checkEligibility, rankSkillGaps } from "@/lib/rules";
 
-/** Accepts a JSON array (from resume parsing) or plain text; always stores an array. */
-function parseProjectsInput(raw: string) {
+type Project = { title: string; description: string; tech: string[] };
+
+/** Reads the project cards sent by the profile form (a JSON array) and keeps only clean, size-limited entries. */
+function parseProjectsInput(raw: string): Project[] | undefined {
   const text = raw.trim();
   if (!text) return undefined;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed;
+    parsed = JSON.parse(text);
   } catch {
-    // not JSON — treat as free text below
+    // Not JSON: keep what was typed as a single project rather than losing it.
+    return [{ title: "Projects", description: text.slice(0, 800), tech: [] }];
   }
-  return [{ title: "Projects", description: text }];
+  if (!Array.isArray(parsed)) return undefined;
+  return parsed
+    .slice(0, 10)
+    .map((p): Project => {
+      const o = (p ?? {}) as Record<string, unknown>;
+      const tech = Array.isArray(o.tech) ? o.tech.map((t) => String(t).trim().slice(0, 40)).filter(Boolean).slice(0, 12) : [];
+      return {
+        title: String(o.title ?? "").trim().slice(0, 120),
+        description: String(o.description ?? "").trim().slice(0, 800),
+        tech,
+      };
+    })
+    .filter((p) => p.title || p.description);
 }
 
 async function requireStudent() {

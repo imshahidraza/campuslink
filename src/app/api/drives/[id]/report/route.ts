@@ -41,9 +41,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const W = 595.28;
   const H = 841.89;
   const M = 48;
-  const ink = rgb(0.1, 0.07, 0.18);
-  const muted = rgb(0.4, 0.38, 0.45);
-  const brand = rgb(0.42, 0.2, 0.75);
+  const ink = rgb(0.04, 0.04, 0.05);
+  const muted = rgb(0.42, 0.42, 0.45);
+  const brand = rgb(0.09, 0.09, 0.1);
 
   let page: PDFPage = pdf.addPage([W, H]);
   let y = H - M;
@@ -96,7 +96,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const barMax = 220;
     const pct = apps.length ? count / apps.length : 0;
     text(row.label, M, 10);
-    page.drawRectangle({ x: M + 170, y: y - 2, width: barMax, height: 9, color: rgb(0.93, 0.91, 0.97) });
+    page.drawRectangle({ x: M + 170, y: y - 2, width: barMax, height: 9, color: rgb(0.93, 0.93, 0.91) });
     if (pct > 0) page.drawRectangle({ x: M + 170, y: y - 2, width: Math.max(2, barMax * pct), height: 9, color: brand });
     text(String(count), M + 170 + barMax + 10, 10, bold);
     y -= 17;
@@ -115,7 +115,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     { h: "Stage", x: M + 413, w: 90 },
   ];
   const header = () => {
-    page.drawRectangle({ x: M - 4, y: y - 5, width: W - 2 * M + 8, height: 17, color: rgb(0.93, 0.91, 0.97) });
+    page.drawRectangle({ x: M - 4, y: y - 5, width: W - 2 * M + 8, height: 17, color: rgb(0.93, 0.93, 0.91) });
     cols.forEach((c) => text(c.h, c.x, 9, bold));
     y -= 18;
   };

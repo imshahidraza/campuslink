@@ -30,7 +30,10 @@ model Specialization {
 model College {
   id          String   @id @default(cuid())
   name        String
-  emailDomain String? // e.g. "mycollege.edu" — if set, student signup emails must match it
+  emailDomain String? // e.g. "mycollege.edu" (if set, student signup emails must match it)
+  // Where students are told to email their documents after accepting an offer.
+  // If empty, the first TPO account's email is shown instead.
+  tpoEmail    String?
   createdAt   DateTime @default(now())
 }
 
@@ -46,6 +49,12 @@ model PendingStudent {
   cgpa           Float
   backlogs       Int
   graduationYear Int
+  // Optional assessment scores imported together with the roster; copied to the
+  // Student record when the student signs up.
+  aptitudeScore      Int?
+  reasoningScore     Int?
+  verbalScore        Int?
+  communicationScore Int?
   createdAt      DateTime @default(now())
 }
 
@@ -85,7 +94,14 @@ enum ApplicationStage {
   OFFER_ACCEPTED // student accepted — placed, pending joining formalities
   OFFER_DECLINED // student declined — does NOT block other drives
   JOINED // documents verified + joining confirmed
-  REJECTED
+  REJECTED // shown to users as "Not selected"
+  WITHDRAWN // the student withdrew their own application
+}
+
+enum RecruiterStatus {
+  PENDING
+  APPROVED
+  DECLINED
 }
 
 enum NotificationType {
@@ -163,10 +179,13 @@ model Student {
   resumeFeedbackAt DateTime?
 
   applications  Application[]
+  matches       DriveMatch[]
   notifications Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([program, branch])
 }
 
 model Recruiter {
@@ -178,6 +197,9 @@ model Recruiter {
   companyDesc String?
   website     String?
   industry    String?
+
+  // New recruiters wait for the TPO to approve them before they can create drives.
+  status RecruiterStatus @default(PENDING)
 
   drives        Drive[]
   notifications RecruiterNotification[]
@@ -209,12 +231,38 @@ model Drive {
   venue       String?
   interviewStages String[] @default([])
   status      DriveStatus @default(DRAFT)
+  // Optional last moment a student can apply or withdraw.
+  applyDeadline DateTime?
 
   applications Application[]
   interviews   Interview[]
+  matches      DriveMatch[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([recruiterId])
+  @@index([status])
+}
+
+/// A student's private AI fit check for a drive. It is NOT an application:
+/// recruiters only see a student after they press Apply (see Application).
+model DriveMatch {
+  id        String  @id @default(cuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  driveId   String
+  drive     Drive   @relation(fields: [driveId], references: [id], onDelete: Cascade)
+
+  fitScore         Int?
+  matchedSkills    String[] @default([])
+  missingSkills    String[] @default([])
+  relevantProjects String[] @default([])
+  matchExplanation String?
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, driveId])
 }
 
 model Application {
@@ -259,6 +307,8 @@ model Application {
   updatedAt DateTime @updatedAt
 
   @@unique([studentId, driveId])
+  @@index([driveId, stage])
+  @@index([studentId])
 }
 
 model Interview {
@@ -279,8 +329,14 @@ model Interview {
   // The TPO knowingly scheduled this despite a clash (e.g. the recruiter can only come then).
   overridden     Boolean @default(false)
   overrideReason String?
+  // Who set this slot up (the recruiter or the placement cell).
+  scheduledByRole Role @default(TPO)
 
   createdAt DateTime @default(now())
+
+  @@index([driveId])
+  @@index([applicationId])
+  @@index([scheduledAt])
 }
 
 model Notification {
@@ -292,6 +348,8 @@ model Notification {
   message   String
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
+
+  @@index([studentId, read])
 }
 
 /// Broadcast to every TPO at this college (there's typically just one, but
@@ -315,6 +373,8 @@ model RecruiterNotification {
   message     String
   read        Boolean          @default(false)
   createdAt   DateTime         @default(now())
+
+  @@index([recruiterId, read])
 }
 
 /// The student's uploaded resume PDF, kept in its own table so list queries never

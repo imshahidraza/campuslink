@@ -11,15 +11,15 @@ export default function AddStudentsPage() {
       </Link>
       <h1 className="text-2xl font-semibold text-ink">Add Students</h1>
       <p className="text-muted text-sm mt-1">
-        These become pending records — each student then claims their own by signing up with their roll number
-        (and college email, if you&apos;ve set a domain in College Setup).
+        Import your students here, with their assessment scores if you have them. Each student then claims their
+        record by signing up with their roll number.
       </p>
 
       <Card className="mt-8 max-w-3xl">
         <CardHeader>
-          <CardTitle>Paste roster</CardTitle>
+          <CardTitle>Paste or import students</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <RosterPasteForm />
         </CardContent>
       </Card>

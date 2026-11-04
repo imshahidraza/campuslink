@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Never ship browser source maps to visitors.
+  productionBrowserSourceMaps: false,
+  // Don't advertise the framework in response headers.
+  poweredByHeader: false,
   // Trust Cloudflare Quick Tunnel hostnames during development.
   // This allows the HMR WebSocket connection to succeed.
   allowedDevOrigins: [

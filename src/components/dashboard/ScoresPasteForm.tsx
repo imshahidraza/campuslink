@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { Upload } from "lucide-react";
 
-const EXAMPLE = `Roll No, Aptitude, Reasoning, Verbal, Communication
-21CS101, 88, 84, 79, 90
-21CS102, 65, 70, 60, 72`;
+// Shown only as a grey placeholder. Nothing here is ever saved unless the TPO types or imports it.
+const PLACEHOLDER = `Roll No, Aptitude, Reasoning, Verbal, Communication
+(one student per row)`;
 
 export function ScoresPasteForm() {
   const router = useRouter();
@@ -31,7 +31,7 @@ export function ScoresPasteForm() {
         router.refresh();
       }
       if (r.errors.length > 0) {
-        toast(`${r.errors.length} row(s) skipped — see details below.`, "error");
+        toast(`${r.errors.length} row${r.errors.length === 1 ? "" : "s"} skipped. See the details below.`, "error");
       }
     });
   }
@@ -42,7 +42,7 @@ export function ScoresPasteForm() {
     const reader = new FileReader();
     reader.onload = () => {
       setText(String(reader.result || ""));
-      toast(`Loaded ${file.name} — review below, then click Update scores.`, "info");
+      toast(`Loaded ${file.name}. Review it below, then click Update scores.`, "info");
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -53,9 +53,9 @@ export function ScoresPasteForm() {
       <div>
         <p className="text-sm text-ink font-medium">One student per row:</p>
         <p className="text-xs text-muted mt-1">
-          Roll No, Aptitude, Reasoning, Verbal, Communication — any column order with a header row, or that
-          exact order without one. Only students who&apos;ve already signed up can receive scores — leave a
-          column blank to skip updating it for that student.
+          Roll No, Aptitude, Reasoning, Verbal, Communication. Use any column order with a header row, or this exact
+          order without one. Scores work for students who have signed up and for those still waiting to sign up. Leave
+          a cell blank to keep the current score.
         </p>
       </div>
 
@@ -63,7 +63,7 @@ export function ScoresPasteForm() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={8}
-        placeholder={EXAMPLE}
+        placeholder={PLACEHOLDER}
         className="w-full rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm text-ink font-mono placeholder:text-muted/60 focus:outline-none focus:border-brand-300"
       />
 
@@ -79,14 +79,11 @@ export function ScoresPasteForm() {
           <Upload className="h-3.5 w-3.5" /> Import .csv file
         </button>
         <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
-        <button type="button" onClick={() => setText(EXAMPLE)} className="text-xs text-brand-500 hover:text-brand-600">
-          Fill example
-        </button>
       </div>
 
       {result && result.errors.length > 0 && (
         <div className="rounded-xl border border-border-soft bg-surface p-4 text-sm space-y-2">
-          <p className="text-rose-600 font-medium">{result.errors.length} row(s) skipped:</p>
+          <p className="text-rose-600 font-medium">{result.errors.length} row{result.errors.length === 1 ? "" : "s"} skipped:</p>
           <ul className="mt-1 space-y-1 text-xs text-muted list-disc list-inside">
             {result.errors.map((e, i) => (
               <li key={i}>{e}</li>

@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { MarkReadButton } from "@/components/dashboard/MarkReadButton";
 import { markNotificationReadAction } from "@/lib/actions/student";
 import { cn } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/format";
 
 export default async function NotificationsPage() {
   const { student } = await requireStudentOrRedirect();
@@ -25,7 +26,7 @@ export default async function NotificationsPage() {
               <div>
                 <p className="text-sm font-medium text-ink">{n.title}</p>
                 <p className="text-sm text-muted mt-1">{n.message}</p>
-                <p className="text-[11px] text-muted mt-2">{new Date(n.createdAt).toLocaleString()}</p>
+                <p className="text-[11px] text-muted mt-2">{fmtDateTime(n.createdAt)}</p>
               </div>
               {!n.read && <MarkReadButton onMarkRead={markNotificationReadAction.bind(null, n.id)} />}
             </CardContent>

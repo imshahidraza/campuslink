@@ -86,7 +86,7 @@ export function SpecialConsiderationPanel({
     <div className="space-y-5">
       <p className="text-xs text-muted leading-relaxed">
         Recommend a student who doesn&apos;t meet this drive&apos;s automatic eligibility rules but whose
-        skills/projects justify a look. They&apos;ll be clearly labeled to the recruiter — this doesn&apos;t
+        skills/projects justify a look. They&apos;ll be clearly labeled to the recruiter. This doesn&apos;t
         guarantee selection or skip any normal review step.
       </p>
 
@@ -137,7 +137,7 @@ export function SpecialConsiderationPanel({
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Optional note for the recruiter — why you're recommending them (e.g. strong portfolio despite CGPA)"
+            placeholder="Optional note for the recruiter: why you're recommending them (e.g. strong portfolio despite CGPA)"
             rows={2}
             className="w-full mt-2 rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand-300"
           />

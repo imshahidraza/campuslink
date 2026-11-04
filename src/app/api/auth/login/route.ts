@@ -5,6 +5,7 @@ import { setSessionCookie } from "@/lib/auth";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { safeErrorMessage } from "@/lib/safeError";
 import { normalizePhone } from "@/lib/phone";
+import { normalizeRollNo } from "@/lib/normalize";
 
 // Deliberately the SAME message for "no such account" and "wrong password" —
 // telling them apart lets an attacker enumerate which emails/roll numbers
@@ -34,7 +35,8 @@ export async function POST(req: NextRequest) {
 
     if (role === "STUDENT") {
       // Students log in with roll number + password, not email.
-      const rollNo = typeof body.rollNo === "string" ? body.rollNo.trim() : "";
+      // Roll numbers are not case-sensitive: 23MCA101, 23mca101 and 23Mca101 are the same student.
+      const rollNo = typeof body.rollNo === "string" ? normalizeRollNo(body.rollNo) : "";
       if (!rollNo) {
         return NextResponse.json({ error: "Roll number is required." }, { status: 400 });
       }

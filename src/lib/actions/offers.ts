@@ -2,8 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getSession, assertRole } from "@/lib/auth";
+import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { checkSchedulingConflicts, OFFER_PIPELINE_STAGES } from "@/lib/rules";
+import { assertCanManageDrive, requireApprovedRecruiter } from "@/lib/access";
+import { getDocumentsEmail } from "@/lib/college";
+import { refreshPlacementStatus } from "@/lib/placement";
+import { fmtDateTime } from "@/lib/format";
 
 async function requireTpo() {
   const session = await getSession();
@@ -12,12 +16,14 @@ async function requireTpo() {
 }
 
 /**
- * Schedules one interview. If the slot clashes (same student, panel or venue), nothing is saved and the
- * clash is returned so the TPO can decide. The TPO keeps the final say: sending `override=1` (with an
- * optional reason) saves it anyway, marked as a deliberate TPO override.
+ * Schedules one interview. The placement cell, or the recruiter who owns the drive, can do this.
+ * If the slot clashes (same student, panel or venue), nothing is saved and the clash is returned so the
+ * person can pick another time. Only the placement cell can knowingly override a clash: sending
+ * `override=1` (with an optional reason) saves it anyway, marked as a deliberate override.
  */
 export async function scheduleInterviewAction(formData: FormData) {
-  await requireTpo();
+  const session = await getSession();
+  assertAnyRole(session, ["TPO", "RECRUITER"]);
 
   const applicationId = String(formData.get("applicationId"));
   const driveId = String(formData.get("driveId"));
@@ -30,9 +36,23 @@ export async function scheduleInterviewAction(formData: FormData) {
   const override = String(formData.get("override") || "") === "1";
   const overrideReason = String(formData.get("overrideReason") || "").trim().slice(0, 300) || null;
 
-  const application = await prisma.application.findUniqueOrThrow({ where: { id: applicationId } });
+  const application = await prisma.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    include: { drive: true, student: { include: { user: { select: { name: true } } } } },
+  });
+  await assertCanManageDrive(session, application.drive.recruiterId);
+
+  if (override && session.role !== "TPO") {
+    throw new Error("Only the placement cell can schedule over a clash. Please choose another time.");
+  }
+  if (application.stage === "WITHDRAWN" || application.stage === "REJECTED") {
+    throw new Error("This candidate is no longer in the process, so an interview can't be scheduled.");
+  }
   if ((OFFER_PIPELINE_STAGES as readonly string[]).includes(application.stage)) {
     throw new Error("This candidate is already in the offer process, so an interview can't be scheduled.");
+  }
+  if (session.role === "RECRUITER" && !["SHORTLISTED", "INTERVIEW"].includes(application.stage)) {
+    throw new Error("Shortlist this candidate before scheduling an interview.");
   }
   if (application.driveId !== driveId) throw new Error("That candidate doesn't belong to this drive.");
 
@@ -58,9 +78,9 @@ export async function scheduleInterviewAction(formData: FormData) {
     }))
   );
 
-  // Clash and no explicit override yet: save nothing, hand the details back for the TPO to decide.
+  // Clash and no explicit override yet: save nothing, hand the details back for the person to decide.
   if (conflict.hasConflict && !override) {
-    return { saved: false as const, conflict };
+    return { saved: false as const, conflict, canOverride: session.role === "TPO" };
   }
 
   const interview = await prisma.interview.create({
@@ -76,24 +96,48 @@ export async function scheduleInterviewAction(formData: FormData) {
       conflictNote: conflict.notes.join("; ") || null,
       overridden: conflict.hasConflict,
       overrideReason: conflict.hasConflict ? overrideReason : null,
+      scheduledByRole: session.role,
     },
   });
 
   await prisma.application.update({ where: { id: applicationId }, data: { stage: "INTERVIEW" } });
+  await refreshPlacementStatus(application.studentId);
 
   await prisma.notification.create({
     data: {
       studentId: application.studentId,
       type: "INTERVIEW_SCHEDULE",
       title: `Interview scheduled: ${stage}`,
-      message: `Your ${stage} is scheduled for ${scheduledAt.toLocaleString()}${venue ? ` at ${venue}` : ""}.`,
+      message: `Your ${stage} for ${application.drive.jobRole} at ${application.drive.companyName} is on ${fmtDateTime(scheduledAt)}${venue ? ` at ${venue}` : ""}.`,
     },
   });
+  if (session.role === "RECRUITER") {
+    await prisma.tpoNotification.create({
+      data: {
+        type: "INTERVIEW_SCHEDULE",
+        title: "Interview scheduled by a recruiter",
+        message: `${application.drive.companyName} scheduled ${application.student.rollNo} (${application.student.user.name}) for ${stage} on ${fmtDateTime(scheduledAt)}.`,
+      },
+    });
+  } else {
+    await prisma.recruiterNotification.create({
+      data: {
+        recruiterId: application.drive.recruiterId,
+        type: "INTERVIEW_SCHEDULE",
+        title: "Interview scheduled by the placement cell",
+        message: `${application.student.rollNo} (${application.student.user.name}) has a ${stage} on ${fmtDateTime(scheduledAt)}${venue ? ` at ${venue}` : ""}.`,
+      },
+    });
+  }
 
   revalidatePath("/tpo/scheduling");
+  revalidatePath("/tpo/notifications");
+  revalidatePath("/recruiter/notifications");
   revalidatePath(`/tpo/drives/${driveId}`);
+  revalidatePath(`/recruiter/drives/${driveId}`);
   revalidatePath("/student/journey");
-  return { saved: true as const, interview, conflict };
+  revalidatePath("/student/notifications");
+  return { saved: true as const, interview, conflict, canOverride: session.role === "TPO" };
 }
 
 /* ======================= Offer pipeline =======================
@@ -111,7 +155,7 @@ export async function requestOfferAction(applicationId: string, formData: FormDa
   const offerPackage = String(formData.get("offerPackage") || "").trim();
   if (!offerPackage) throw new Error("Please enter the package you're offering.");
 
-  const recruiter = await prisma.recruiter.findUniqueOrThrow({ where: { userId: session.userId } });
+  const recruiter = await requireApprovedRecruiter(session.userId);
   const application = await prisma.application.findUniqueOrThrow({
     where: { id: applicationId },
     include: { drive: true, student: { include: { user: true } } },
@@ -121,7 +165,7 @@ export async function requestOfferAction(applicationId: string, formData: FormDa
     throw new Error("You can only request offers for your own drives.");
   }
   if (application.stage !== "SELECTED") {
-    throw new Error('This candidate must be marked "Selected" before you can request an offer.');
+    throw new Error("Select this candidate before you request an offer.");
   }
 
   const updated = await prisma.application.update({
@@ -161,14 +205,14 @@ export async function sendOfferToStudentAction(applicationId: string) {
     data: { stage: "OFFER_SENT", offerSentAt: new Date() },
   });
 
-  await prisma.student.update({ where: { id: application.studentId }, data: { placementStatus: "OFFER_RECEIVED" } });
+  await refreshPlacementStatus(application.studentId);
 
   await prisma.notification.create({
     data: {
       studentId: application.studentId,
       type: "OFFER_UPDATE",
       title: `You've received an offer from ${application.drive.companyName}!`,
-      message: `Package: ${application.offerPackage}. Visit your Placement Journey to accept or decline.`,
+      message: `Package: ${application.offerPackage}. Open your Placement Journey to accept or decline.`,
     },
   });
 
@@ -202,13 +246,25 @@ export async function studentRespondToOfferAction(applicationId: string, respons
     data: { stage: accepted ? "OFFER_ACCEPTED" : "OFFER_DECLINED", offerRespondedAt: new Date() },
   });
 
-  // A decline is scoped to this one drive only — never overwrite the student's
-  // overall status, since they may still be in the running elsewhere.
-  if (accepted) {
-    await prisma.student.update({ where: { id: student.id }, data: { placementStatus: "OFFER_ACCEPTED" } });
-  }
+  // A decline is scoped to this one drive only. The overall status is recomputed from the
+  // student's other applications, so a decline never marks them unplaced if they are active elsewhere.
+  await refreshPlacementStatus(student.id);
+
+  const docsEmail = accepted ? await getDocumentsEmail() : null;
 
   await Promise.all([
+    accepted
+      ? prisma.notification.create({
+          data: {
+            studentId: student.id,
+            type: "DOCUMENT_DEADLINE",
+            title: "Next step: send your documents",
+            message: docsEmail
+              ? `Please email your important documents to ${docsEmail} for verification. The placement cell will update your status once they are verified.`
+              : "Please send your important documents to the placement cell for verification. They will update your status once they are verified.",
+          },
+        })
+      : Promise.resolve(),
     prisma.recruiterNotification.create({
       data: {
         recruiterId: application.drive.recruiterId,
@@ -227,43 +283,80 @@ export async function studentRespondToOfferAction(applicationId: string, respons
   ]);
 
   revalidatePath("/student/journey");
+  revalidatePath("/student/notifications");
   revalidatePath("/tpo/offers");
   revalidatePath("/tpo/notifications");
+  revalidatePath("/recruiter/notifications");
   revalidatePath(`/recruiter/drives/${application.driveId}`);
   return updated;
 }
 
-/** TPO confirms the student's documents are verified — the step between acceptance and joining. */
+/** TPO confirms the student's documents (checked over email) are verified: the step between acceptance and joining. */
 export async function verifyDocumentsAction(applicationId: string) {
   await requireTpo();
-  const application = await prisma.application.findUniqueOrThrow({ where: { id: applicationId } });
+  const application = await prisma.application.findUniqueOrThrow({ where: { id: applicationId }, include: { drive: true } });
   if (application.stage !== "OFFER_ACCEPTED") {
     throw new Error("Documents can only be verified after the student has accepted the offer.");
   }
+  if (application.documentsVerified) return application;
   const updated = await prisma.application.update({
     where: { id: applicationId },
     data: { documentsVerified: true },
   });
+  await prisma.notification.create({
+    data: {
+      studentId: application.studentId,
+      type: "DOCUMENT_DEADLINE",
+      title: "Your documents are verified",
+      message: `The placement cell verified your documents for ${application.drive.companyName}. You will be marked as joined once you report to the company.`,
+    },
+  });
   revalidatePath("/tpo/offers");
   revalidatePath("/student/journey");
+  revalidatePath("/student/notifications");
   return updated;
 }
 
-/** TPO marks the student as joined — the final step, only available after documents are verified. */
+/** TPO marks the student as joined, the final step. Only available after documents are verified. */
 export async function markJoinedAction(applicationId: string) {
   await requireTpo();
-  const application = await prisma.application.findUniqueOrThrow({ where: { id: applicationId } });
+  const application = await prisma.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    include: { drive: true, student: { include: { user: { select: { name: true } } } } },
+  });
   if (!application.documentsVerified) {
-    throw new Error("Verify documents before marking this student as joined.");
+    throw new Error("Verify the documents before marking this student as joined.");
   }
+  if (application.stage === "JOINED") return application;
   const updated = await prisma.application.update({
     where: { id: applicationId },
     data: { stage: "JOINED", joined: true },
   });
-  await prisma.student.update({ where: { id: application.studentId }, data: { placementStatus: "JOINED" } });
+  await refreshPlacementStatus(application.studentId);
+  await Promise.all([
+    prisma.notification.create({
+      data: {
+        studentId: application.studentId,
+        type: "OFFER_UPDATE",
+        title: `Welcome to ${application.drive.companyName}!`,
+        message: "You are now marked as joined. Congratulations on your placement.",
+      },
+    }),
+    prisma.recruiterNotification.create({
+      data: {
+        recruiterId: application.drive.recruiterId,
+        type: "OFFER_UPDATE",
+        title: "A candidate has joined",
+        message: `${application.student.rollNo} (${application.student.user.name}) is now marked as joined for ${application.drive.jobRole}.`,
+      },
+    }),
+  ]);
 
   revalidatePath("/tpo/offers");
   revalidatePath("/student/journey");
+  revalidatePath("/student/notifications");
+  revalidatePath("/recruiter/notifications");
+  revalidatePath(`/recruiter/drives/${application.driveId}`);
   return updated;
 }
 

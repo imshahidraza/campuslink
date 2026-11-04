@@ -13,6 +13,39 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4:e4b";
 export class OllamaError extends Error {}
 
 /**
+ * Gemma runs on the same PC as the website, and one reply can take a while. If several people click an AI
+ * button together, they wait in line here instead of piling onto the model (which would slow or crash it).
+ * The queue lives in this server process, which is right for a single-college deployment.
+ */
+const MAX_WAITING = 25; // beyond this, ask people to try again shortly
+const g = globalThis as unknown as { __ollamaQueue?: { tail: Promise<unknown>; waiting: number; running: boolean } };
+const queue = (g.__ollamaQueue ??= { tail: Promise.resolve(), waiting: 0, running: false });
+
+async function runInQueue<T>(job: () => Promise<T>): Promise<T> {
+  if (queue.waiting >= MAX_WAITING) {
+    throw new OllamaError("The AI is very busy right now. Please try again in a minute.");
+  }
+  queue.waiting++;
+  const previous = queue.tail;
+  let release!: () => void;
+  queue.tail = new Promise<void>((resolve) => (release = resolve));
+  try {
+    await previous.catch(() => {});
+    queue.running = true;
+    return await job();
+  } finally {
+    queue.running = false;
+    queue.waiting--;
+    release();
+  }
+}
+
+/** How many AI jobs are running or waiting right now (for the status badge). */
+export function aiQueueStatus() {
+  return { running: queue.running, waiting: Math.max(0, queue.waiting - (queue.running ? 1 : 0)) };
+}
+
+/**
  * Calls Ollama's /api/generate endpoint and asks for strict JSON back.
  * `schemaHint` is a human-readable description of the exact JSON shape
  * we want, embedded in the prompt (Gemma doesn't have a native JSON
@@ -37,6 +70,10 @@ ${params.prompt}
 
 JSON response:`;
 
+  return runInQueue(() => callOllama<T>(fullPrompt, params.temperature));
+}
+
+async function callOllama<T>(fullPrompt: string, temperature?: number): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
@@ -46,8 +83,12 @@ JSON response:`;
         model: OLLAMA_MODEL,
         prompt: fullPrompt,
         stream: false,
+        // Keep the model loaded between requests so the next click doesn't wait for a reload.
+        keep_alive: "30m",
         options: {
-          temperature: params.temperature ?? 0.2,
+          temperature: temperature ?? 0.2,
+          // Cap the reply length so a runaway answer can't hold the queue for minutes (large enough for a full resume).
+          num_predict: 4096,
         },
       }),
       // Local model calls can be slow on modest hardware — give it room.
@@ -55,9 +96,11 @@ JSON response:`;
     });
   } catch (err) {
     throw new OllamaError(
-      `Could not reach Ollama at ${OLLAMA_BASE_URL}. Is "ollama serve" running and is "${OLLAMA_MODEL}" pulled? (${
-        (err as Error).message
-      })`
+      (err as Error).name === "TimeoutError"
+        ? "The AI took too long to answer. Please try again."
+        : `Could not reach Ollama at ${OLLAMA_BASE_URL}. Is "ollama serve" running and is "${OLLAMA_MODEL}" pulled? (${
+            (err as Error).message
+          })`
     );
   }
 

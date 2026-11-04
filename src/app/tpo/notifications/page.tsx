@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { MarkReadButton } from "@/components/dashboard/MarkReadButton";
 import { markTpoNotificationReadAction } from "@/lib/actions/offers";
 import { cn } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/format";
 
 export default async function TpoNotificationsPage() {
   const notifications = await prisma.tpoNotification.findMany({ orderBy: { createdAt: "desc" } });
@@ -20,7 +21,7 @@ export default async function TpoNotificationsPage() {
               <div>
                 <p className="text-sm font-medium text-ink">{n.title}</p>
                 <p className="text-sm text-muted mt-1">{n.message}</p>
-                <p className="text-[11px] text-muted mt-2">{new Date(n.createdAt).toLocaleString()}</p>
+                <p className="text-[11px] text-muted mt-2">{fmtDateTime(n.createdAt)}</p>
               </div>
               {!n.read && <MarkReadButton onMarkRead={markTpoNotificationReadAction.bind(null, n.id)} />}
             </CardContent>

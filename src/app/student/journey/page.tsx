@@ -2,9 +2,37 @@ import { requireStudentOrRedirect } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/Card";
 import { OfferResponseButtons } from "@/components/dashboard/OfferResponseButtons";
-import { APPLICATION_STAGES, TERMINAL_STAGES, stageIndex } from "@/lib/rules";
-import { stageLabel } from "@/lib/utils";
+import { TERMINAL_STAGES } from "@/lib/rules";
+import { journeyLabel } from "@/lib/utils";
+import { getDocumentsEmail } from "@/lib/college";
 import { Check, Sparkles } from "lucide-react";
+import { fmtDateTime } from "@/lib/format";
+
+const STEP_INDEX: Record<string, number> = {
+  ELIGIBLE: 0,
+  SHORTLISTED: 1,
+  INTERVIEW: 2,
+  SELECTED: 3,
+  OFFER_REQUESTED: 4,
+  OFFER_SENT: 5,
+  OFFER_ACCEPTED: 6,
+  JOINED: 8,
+};
+
+/** The steps a student sees. Documents are checked by the placement cell over email, between accepting and joining. */
+function stepsFor(documentsVerified: boolean) {
+  return [
+    "Applied",
+    "Shortlisted",
+    "Interview",
+    "Selected",
+    "Offer requested",
+    "Offer sent",
+    "Offer accepted",
+    documentsVerified ? "Documents verified" : "Documents verification pending",
+    "Joined",
+  ];
+}
 
 export default async function JourneyPage() {
   const { student: studentBase } = await requireStudentOrRedirect();
@@ -18,18 +46,22 @@ export default async function JourneyPage() {
     },
   });
 
+  const docsEmail = await getDocumentsEmail();
+
   return (
     <div>
       <h1 className="text-2xl font-semibold text-ink">Placement Journey</h1>
-      <p className="text-muted text-sm mt-1">Track every application from eligibility to joining.</p>
+      <p className="text-muted text-sm mt-1">Follow each application from applying to joining.</p>
 
       <div className="mt-8 space-y-5">
         {student.applications.length === 0 && (
-          <p className="text-sm text-muted">No applications yet — visit Drives &amp; Matching to get started.</p>
+          <p className="text-sm text-muted">You have not applied to any drive yet. Open Drives &amp; Matching to get started.</p>
         )}
         {student.applications.map((app) => {
           const isTerminal = (TERMINAL_STAGES as readonly string[]).includes(app.stage);
-          const currentIndex = isTerminal ? -1 : stageIndex(app.stage);
+          const steps = stepsFor(app.documentsVerified);
+          let currentIndex = isTerminal ? -1 : (STEP_INDEX[app.stage] ?? 0);
+          if (app.stage === "OFFER_ACCEPTED" && app.documentsVerified) currentIndex = 7;
           return (
             <Card key={app.id}>
               <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -39,29 +71,30 @@ export default async function JourneyPage() {
                 </div>
                 {app.stage === "REJECTED" && <Badge tone="danger">Not selected</Badge>}
                 {app.stage === "OFFER_DECLINED" && <Badge tone="neutral">Offer declined</Badge>}
-                {!isTerminal && <Badge tone="brand">{stageLabel(app.stage)}</Badge>}
+                {app.stage === "WITHDRAWN" && <Badge tone="neutral">Withdrawn</Badge>}
+                {!isTerminal && <Badge tone="brand">{journeyLabel(app.stage, app.documentsVerified)}</Badge>}
               </CardHeader>
               <CardContent>
                 {!isTerminal && (
                   <div className="overflow-x-auto scrollbar-thin -mx-1 px-1">
-                    <div className="flex items-center min-w-[640px] sm:min-w-0">
-                      {APPLICATION_STAGES.map((stage, i) => (
-                        <div key={stage} className="flex items-center flex-1 last:flex-none">
+                    <div className="flex items-center min-w-[860px] sm:min-w-[860px]">
+                      {steps.map((label, i) => (
+                        <div key={i} className="flex items-center flex-1 last:flex-none">
                           <div className="flex flex-col items-center gap-1.5">
                             <div
                               className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0 ${
                                 i <= currentIndex
-                                  ? "bg-brand-500 text-white"
+                                  ? "bg-accent-lime text-brand-950"
                                   : "bg-surface-2 text-muted"
                               }`}
                             >
                               {i <= currentIndex ? <Check className="h-3.5 w-3.5" /> : i + 1}
                             </div>
-                            <span className="text-[11px] text-muted whitespace-nowrap">{stageLabel(stage)}</span>
+                            <span className={`text-[11px] whitespace-nowrap ${i === currentIndex + 1 && app.stage === "OFFER_ACCEPTED" ? "text-ink font-medium" : "text-muted"}`}>{label}</span>
                           </div>
-                          {i < APPLICATION_STAGES.length - 1 && (
+                          {i < steps.length - 1 && (
                             <div
-                              className={`h-px flex-1 mx-2 ${i < currentIndex ? "bg-brand-500" : "bg-border-soft"}`}
+                              className={`h-px flex-1 mx-2 ${i < currentIndex ? "bg-accent-lime" : "bg-border-soft"}`}
                             />
                           )}
                         </div>
@@ -87,14 +120,32 @@ export default async function JourneyPage() {
                   </p>
                 )}
 
-                {app.stage === "OFFER_SENT" && <OfferResponseButtons applicationId={app.id} />}
+                {app.stage === "OFFER_SENT" && <OfferResponseButtons applicationId={app.id} docsEmail={docsEmail} />}
+
+                {app.stage === "OFFER_ACCEPTED" && (
+                  <div className="mt-4 rounded-xl bg-brand-100/40 border border-brand-200 p-4">
+                    <p className="text-sm text-ink font-medium">
+                      {app.documentsVerified ? "Your documents are verified" : "Documents verification pending"}
+                    </p>
+                    <p className="text-sm text-muted mt-1 leading-relaxed">
+                      {app.documentsVerified
+                        ? "The placement cell will mark you as joined once you report to the company."
+                        : docsEmail
+                          ? `Please email your important documents to ${docsEmail} for verification. The placement cell will update your profile as joined after that.`
+                          : "Please send your important documents to the placement cell for verification. They will update your profile as joined after that."}
+                    </p>
+                  </div>
+                )}
+                {app.stage === "JOINED" && (
+                  <p className="mt-4 text-sm text-emerald-700 font-medium">You have joined {app.drive.companyName}. Congratulations!</p>
+                )}
 
                 {app.interviews.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-border-soft space-y-2">
                     {app.interviews.map((iv) => (
                       <p key={iv.id} className="text-sm text-muted">
-                        <span className="text-ink font-medium">{iv.stage}</span> —{" "}
-                        {new Date(iv.scheduledAt).toLocaleString()}
+                        <span className="text-ink font-medium">{iv.stage}</span>,{" "}
+                        {fmtDateTime(iv.scheduledAt)}
                         {iv.venue ? ` · ${iv.venue}` : ""}
                       </p>
                     ))}

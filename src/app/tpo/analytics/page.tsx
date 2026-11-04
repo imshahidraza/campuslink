@@ -21,9 +21,9 @@ const ADVANCED_STAGES = ["SHORTLISTED", "INTERVIEW", "SELECTED", "OFFER_REQUESTE
 
 const CGPA_BANDS = [
   { label: "Below 6", min: 0, max: 6 },
-  { label: "6 – 7", min: 6, max: 7 },
-  { label: "7 – 8", min: 7, max: 8 },
-  { label: "8 – 9", min: 8, max: 9 },
+  { label: "6 to 7", min: 6, max: 7 },
+  { label: "7 to 8", min: 7, max: 8 },
+  { label: "8 to 9", min: 8, max: 9 },
   { label: "9 and above", min: 9, max: Infinity },
 ];
 
@@ -86,7 +86,7 @@ export default async function AnalyticsPage() {
 
       <Card className="mt-8">
         <CardHeader>
-          <CardTitle>Fairness check — is advancement driven by CGPA alone?</CardTitle>
+          <CardTitle>Fairness check: is advancement driven by CGPA alone?</CardTitle>
         </CardHeader>
         <CardContent>
           {advancedStudents.length === 0 ? (
@@ -99,14 +99,14 @@ export default async function AnalyticsPage() {
               <p className="text-sm text-ink leading-relaxed">
                 <span className="text-2xl font-semibold text-brand-600 mr-1">{belowMedianPct}%</span>
                 of students who advanced (shortlisted or beyond) have a CGPA below the cohort median of{" "}
-                {medianCgpa.toFixed(2)} — {belowMedian} of {advancedStudents.length}.
+                {medianCgpa.toFixed(2)}: {belowMedian} of {advancedStudents.length}.
               </p>
               <p className="text-xs text-muted mt-1">
-                A spread across bands means skills, projects and fit are being weighed — not grades alone.
+                A spread across bands means skills, projects and fit are being weighed, not grades alone.
               </p>
               <div className="mt-6 space-y-4">
                 {cgpaBands.map((b) => (
-                  <Bar key={b.label} label={`CGPA ${b.label} — ${b.advanced} of ${b.total} advanced`} value={b.rate} max={100} />
+                  <Bar key={b.label} label={`CGPA ${b.label}: ${b.advanced} of ${b.total} advanced`} value={b.rate} max={100} />
                 ))}
               </div>
             </>

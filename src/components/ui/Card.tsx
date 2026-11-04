@@ -23,7 +23,7 @@ export function CardTitle({ className, ...props }: ComponentProps<"h3">) {
 }
 
 export function CardContent({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("px-5 pb-5", className)} {...props} />;
+  return <div className={cn("px-5 pt-3 pb-5", className)} {...props} />;
 }
 
 type BadgeTone = "neutral" | "brand" | "success" | "warning" | "danger";

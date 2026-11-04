@@ -3,7 +3,10 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { getSession, assertRole } from "@/lib/auth";
+import { getSession, assertAnyRole, type SessionPayload } from "@/lib/auth";
+import { assertCanManageDrive } from "@/lib/access";
+import { fmtDateTime, fmtTime } from "@/lib/format";
+import { refreshPlacementStatus } from "@/lib/placement";
 import { autoAllocate, type AllocationPanel, type ScheduledSlot } from "@/lib/rules";
 
 const inputSchema = z.object({
@@ -38,9 +41,11 @@ export interface AutoSchedulePlan {
   driveId: string;
 }
 
-async function requireTpo() {
+/** The placement cell, or an approved recruiter (for their own drives only; checked again in buildPlan). */
+async function requireScheduler() {
   const session = await getSession();
-  assertRole(session, "TPO");
+  assertAnyRole(session, ["TPO", "RECRUITER"]);
+  return session;
 }
 
 function parsePanels(raw: string): AllocationPanel[] {
@@ -59,7 +64,7 @@ function parsePanels(raw: string): AllocationPanel[] {
 }
 
 /** Builds the plan (does NOT save anything) — used by both preview and confirm so they always agree. */
-async function buildPlan(rawInput: AutoScheduleInput) {
+async function buildPlan(session: SessionPayload, rawInput: AutoScheduleInput) {
   const parsed = inputSchema.safeParse(rawInput);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Invalid input.");
   const input = parsed.data;
@@ -81,6 +86,7 @@ async function buildPlan(rawInput: AutoScheduleInput) {
 
   const drive = await prisma.drive.findUnique({ where: { id: input.driveId } });
   if (!drive) throw new Error("Drive not found.");
+  await assertCanManageDrive(session, drive.recruiterId);
 
   const shortlisted = await prisma.application.findMany({
     where: { driveId: input.driveId, stage: "SHORTLISTED" },
@@ -139,8 +145,8 @@ async function buildPlan(rawInput: AutoScheduleInput) {
 
 /** Step 1 — show the TPO the proposed timetable. Saves nothing. */
 export async function previewAutoScheduleAction(input: AutoScheduleInput): Promise<AutoSchedulePlan> {
-  await requireTpo();
-  const plan = await buildPlan(input);
+  const session = await requireScheduler();
+  const plan = await buildPlan(session, input);
   if (plan.shortlistedCount === 0) {
     throw new Error("This drive has no shortlisted candidates waiting for an interview. Shortlist some first.");
   }
@@ -149,8 +155,8 @@ export async function previewAutoScheduleAction(input: AutoScheduleInput): Promi
 
 /** Step 2 — the TPO confirmed. We rebuild the plan on the server (never trusting the client's copy), save it and notify students. */
 export async function confirmAutoScheduleAction(input: AutoScheduleInput) {
-  await requireTpo();
-  const plan = await buildPlan(input);
+  const session = await requireScheduler();
+  const plan = await buildPlan(session, input);
   if (plan.rows.length === 0) throw new Error("Nothing to schedule.");
 
   await prisma.$transaction(async (tx) => {
@@ -169,6 +175,7 @@ export async function confirmAutoScheduleAction(input: AutoScheduleInput) {
           venue: row.venue,
           panel: row.panel,
           hasConflict: false,
+          scheduledByRole: session.role,
         },
       });
       await tx.application.update({ where: { id: row.applicationId }, data: { stage: "INTERVIEW" } });
@@ -177,21 +184,54 @@ export async function confirmAutoScheduleAction(input: AutoScheduleInput) {
           studentId: app.studentId,
           type: "INTERVIEW_SCHEDULE",
           title: `Interview scheduled: ${plan.round}`,
-          message: `Your ${plan.round} for ${plan.driveRole} is scheduled for ${at.toLocaleString()}${row.venue ? ` at ${row.venue}` : ""} (${row.panel}).`,
+          message: `Your ${plan.round} for ${plan.driveRole} is on ${fmtDateTime(at)}${row.venue ? ` at ${row.venue}` : ""} (${row.panel}).`,
         },
       });
     }
   });
 
+  for (const row of plan.rows) {
+    const a = await prisma.application.findUnique({ where: { id: row.applicationId }, select: { studentId: true } });
+    if (a) await refreshPlacementStatus(a.studentId);
+  }
+  // Tell the other side once, in a single message.
+  const drive = await prisma.drive.findUniqueOrThrow({ where: { id: plan.driveId } });
+  if (session.role === "RECRUITER") {
+    await prisma.tpoNotification.create({
+      data: {
+        type: "INTERVIEW_SCHEDULE",
+        title: "Interviews scheduled by a recruiter",
+        message: `${drive.companyName} scheduled ${plan.rows.length} ${plan.round} interview${plan.rows.length === 1 ? "" : "s"} for ${drive.jobRole}.`,
+      },
+    });
+  } else {
+    await prisma.recruiterNotification.create({
+      data: {
+        recruiterId: drive.recruiterId,
+        type: "INTERVIEW_SCHEDULE",
+        title: "Interviews scheduled by the placement cell",
+        message: `${plan.rows.length} ${plan.round} interview${plan.rows.length === 1 ? "" : "s"} were scheduled for ${drive.jobRole}.`,
+      },
+    });
+  }
+
   revalidatePath("/tpo/scheduling");
+  revalidatePath("/tpo/notifications");
+  revalidatePath("/recruiter/notifications");
   revalidatePath(`/tpo/drives/${plan.driveId}`);
+  revalidatePath(`/recruiter/drives/${plan.driveId}`);
   revalidatePath("/student/journey");
+  revalidatePath("/student/notifications");
   return { scheduled: plan.rows.length, unscheduled: plan.unscheduled.length };
 }
 
-/** For the "busy day" hint under a date field: what is already scheduled on that day. TPO only. */
+/**
+ * For the "busy day" hint under a date field: what is already scheduled on that day.
+ * Recruiters see only the count and times (never another company's panel or venue).
+ */
 export async function dayLoadAction(date: string) {
-  await requireTpo();
+  const session = await requireScheduler();
+  const showDetails = session.role === "TPO";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { count: 0, items: [] as { time: string; panel: string | null; venue: string | null }[] };
   const start = new Date(`${date}T00:00:00`);
   const end = new Date(`${date}T23:59:59.999`);
@@ -205,9 +245,9 @@ export async function dayLoadAction(date: string) {
   return {
     count: rows.length,
     items: rows.slice(0, 6).map((r) => ({
-      time: r.scheduledAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      panel: r.panel,
-      venue: r.venue,
+      time: fmtTime(r.scheduledAt),
+      panel: showDetails ? r.panel : null,
+      venue: showDetails ? r.venue : null,
     })),
   };
 }

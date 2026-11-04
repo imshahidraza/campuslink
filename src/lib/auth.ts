@@ -121,7 +121,7 @@ export function assertRole(session: SessionPayload | null, expected: SessionPayl
   if (session.role !== expected) {
     throw new Error(
       `You're currently signed in as ${ROLE_LABEL[session.role]}, not ${ROLE_LABEL[expected]}. ` +
-        "If you have another tab open with a different account, that login replaced this one — sign out and back in with the right account."
+        "If you have another tab open with a different account, that login replaced this one. Sign out and back in with the right account."
     );
   }
 }
@@ -137,7 +137,7 @@ export function assertAnyRole(
   if (!expected.includes(session.role)) {
     throw new Error(
       `You're currently signed in as ${ROLE_LABEL[session.role]}, which can't do this. ` +
-        "If you have another tab open with a different account, that login replaced this one — sign out and back in with the right account."
+        "If you have another tab open with a different account, that login replaced this one. Sign out and back in with the right account."
     );
   }
 }

@@ -21,7 +21,7 @@ export function CompanyProfileForm({ defaults }: Props) {
             await updateRecruiterProfileAction(formData);
             toast("Company profile saved.");
           } catch (err) {
-            toast((err as Error).message || "Couldn't save — try again.", "error");
+            toast((err as Error).message || "Couldn't save. Please try again.", "error");
           }
         });
       }}

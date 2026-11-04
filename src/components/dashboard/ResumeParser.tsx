@@ -4,8 +4,10 @@ import { useState, useTransition } from "react";
 import { parseResumeAction, deleteResumeAction } from "@/lib/actions/student";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { AiWaitNote } from "@/components/ui/Loader";
 import { Sparkles, Upload, FileText, Trash2 } from "lucide-react";
 import type { ParsedResume } from "@/lib/ai";
+import { fmtDate } from "@/lib/format";
 
 interface SavedResume {
   studentId: string;
@@ -101,7 +103,7 @@ export function ResumeParser({ saved }: { saved?: SavedResume | null }) {
             <FileText className="h-4 w-4 text-brand-500 shrink-0" />
             <span className="text-ink truncate">{saved.fileName}</span>
             <span className="text-xs text-muted">
-              {(saved.size / 1024).toFixed(0)} KB · uploaded {new Date(saved.uploadedAt).toLocaleDateString()}
+              {(saved.size / 1024).toFixed(0)} KB · uploaded {fmtDate(saved.uploadedAt)}
             </span>
             <a href={`/api/resume/${saved.studentId}`} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-500 hover:text-brand-600">
               View
@@ -134,7 +136,7 @@ export function ResumeParser({ saved }: { saved?: SavedResume | null }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={8}
-        placeholder="Paste your resume text here — Gemma will extract skills, projects, certifications and experience, and merge them into your profile."
+        placeholder="Paste your resume text here. Gemma will pick out your skills, projects, certifications and experience and add them to your profile."
         className="w-full rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:border-brand-300"
       />
       <div className="mt-3 flex items-center gap-3">
@@ -142,11 +144,7 @@ export function ResumeParser({ saved }: { saved?: SavedResume | null }) {
           <Sparkles className="h-4 w-4" />
           {isPending ? "Analyzing with Gemma..." : "Parse resume with AI"}
         </Button>
-        {isPending && (
-          <span className="text-xs text-muted">
-            First run can take a minute on local hardware — Gemma is thinking.
-          </span>
-        )}
+        <AiWaitNote show={isPending} label="This can take up to a minute." />
       </div>
 
       {error && (
@@ -168,7 +166,7 @@ export function ResumeParser({ saved }: { saved?: SavedResume | null }) {
             {result.projects.map((p) => p.title).join(", ") || "none"}
           </p>
           <p className="text-muted text-xs mt-2">
-            Merged into your profile below — you can still edit it manually.
+            Merged into your profile below. You can still edit it.
           </p>
         </div>
       )}

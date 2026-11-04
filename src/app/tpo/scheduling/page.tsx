@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/Card";
 import { AutoScheduleForm } from "@/components/dashboard/AutoScheduleForm";
 import { AlertTriangle } from "lucide-react";
+import { fmtDateTime } from "@/lib/format";
 
 export default async function SchedulingPage() {
   const interviews = await prisma.interview.findMany({
@@ -38,24 +39,24 @@ export default async function SchedulingPage() {
         <CardContent className="pt-5 space-y-3">
           {interviews.length === 0 && (
             <p className="text-sm text-muted">
-              No interviews scheduled yet — schedule one from a drive&apos;s application list.
+              No interviews scheduled yet. Schedule one from a drive&apos;s application list.
             </p>
           )}
           {interviews.map((iv) => (
             <div key={iv.id} className="flex items-center justify-between border-b border-border-soft py-3 last:border-0">
               <div>
                 <p className="text-sm font-medium text-ink">
-                  {iv.application.student.user.name} — {iv.stage}
+                  {iv.application.student.user.name}, {iv.stage}
                 </p>
                 <p className="text-xs text-muted">
-                  {iv.drive.jobRole} · {iv.drive.companyName} · {new Date(iv.scheduledAt).toLocaleString()}
+                  {iv.drive.jobRole} · {iv.drive.companyName} · {fmtDateTime(iv.scheduledAt)}
                   {iv.venue ? ` · ${iv.venue}` : ""}
                   {iv.panel ? ` · Panel: ${iv.panel}` : ""}
                 </p>
                 {iv.overridden && (
                   <p className="text-xs text-amber-700 mt-0.5">
                     Scheduled despite: {iv.conflictNote}
-                    {iv.overrideReason ? ` — Reason: ${iv.overrideReason}` : ""}
+                    {iv.overrideReason ? ` (Reason: ${iv.overrideReason})` : ""}
                   </p>
                 )}
               </div>

@@ -28,7 +28,7 @@ export default async function TpoOverview() {
             <div>
               <p className="text-sm font-medium text-ink">Set up your college&apos;s programs &amp; specializations</p>
               <p className="text-xs text-muted mt-0.5">
-                No specializations configured yet — students won&apos;t be able to be matched to drives until you add some.
+                No specializations are set up yet. Students can&apos;t be matched to drives until you add some.
               </p>
             </div>
           </div>

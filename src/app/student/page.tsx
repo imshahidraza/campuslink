@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui
 import { LinkButton } from "@/components/ui/Button";
 import { readinessLabel, stageLabel } from "@/lib/utils";
 import { Gauge, Briefcase, Bell, ArrowUpRight } from "lucide-react";
+import { fmtDate } from "@/lib/format";
 
 export default async function StudentOverview() {
   const { session, student: studentBase } = await requireStudentOrRedirect();
@@ -32,7 +33,7 @@ export default async function StudentOverview() {
             <p className="text-xl font-semibold text-ink">{readinessLabel(student.readinessLevel)}</p>
             <p className="text-xs text-muted mt-1">
               {student.readinessUpdatedAt
-                ? `Updated ${new Date(student.readinessUpdatedAt).toLocaleDateString()}`
+                ? `Updated ${fmtDate(student.readinessUpdatedAt)}`
                 : "Run your first analysis"}
             </p>
           </CardContent>
@@ -69,7 +70,7 @@ export default async function StudentOverview() {
           </CardHeader>
           <CardContent className="space-y-3">
             {student.applications.length === 0 && (
-              <p className="text-sm text-muted">No applications yet — check eligible drives.</p>
+              <p className="text-sm text-muted">No applications yet. Check the drives open to you.</p>
             )}
             {student.applications.map((app) => (
               <div key={app.id} className="flex items-center justify-between py-2 border-b border-border-soft last:border-0">

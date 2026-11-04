@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { DayLoadHint } from "./DayLoadHint";
 import { previewAutoScheduleAction, confirmAutoScheduleAction, type AutoSchedulePlan } from "@/lib/actions/scheduling";
+import { fmtTime } from "@/lib/format";
 
 interface DriveOption {
   id: string;
@@ -88,7 +89,7 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
           <select className={inputCls} value={f.driveId} onChange={(e) => set("driveId", e.target.value)}>
             {drives.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.label} — {d.shortlisted} shortlisted
+                {d.label} ({d.shortlisted} shortlisted)
               </option>
             ))}
           </select>
@@ -125,7 +126,7 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
           </F>
         </div>
         <div className="sm:col-span-2">
-          <F label="Panels — one per line, optionally with a room: “Panel A @ Room 101”">
+          <F label="Panels, one per line, with a room if you like: “Panel A @ Room 101”">
             <textarea rows={3} className={inputCls} value={f.panels} onChange={(e) => set("panels", e.target.value)} placeholder={"Panel A @ Room 101\nPanel B @ Room 102"} />
           </F>
         </div>
@@ -156,7 +157,7 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
                 {plan.rows.map((r) => (
                   <tr key={r.applicationId} className="border-t border-border-soft">
                     <td className="px-3 py-2 whitespace-nowrap text-ink">
-                      {new Date(r.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {fmtTime(r.scheduledAt)}
                     </td>
                     <td className="px-3 py-2 text-muted">
                       {r.panel}
@@ -177,7 +178,7 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
                 <AlertTriangle className="h-4 w-4" /> {plan.unscheduled.length} candidate{plan.unscheduled.length === 1 ? "" : "s"} couldn&apos;t fit
               </p>
               <p className="text-xs mt-1">
-                {plan.unscheduled.map((u) => `${u.studentName} (${u.rollNo})`).join(", ")} — {plan.unscheduled[0].reason}
+                {plan.unscheduled.map((u) => `${u.studentName} (${u.rollNo})`).join(", ")}, {plan.unscheduled[0].reason}
               </p>
             </div>
           )}

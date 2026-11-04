@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { updateDriveStatusAction, tpoUpdateEligibilityAction } from "@/lib/actions/drives";
 import { runBulkMatchingForDriveAction } from "@/lib/actions/matching";
 import { Button } from "@/components/ui/Button";
+import { AiWaitNote } from "@/components/ui/Loader";
 import { useToast } from "@/components/ui/Toast";
 import { Sparkles } from "lucide-react";
 
@@ -21,7 +22,7 @@ export function DriveStatusControl({ driveId, status }: { driveId: string; statu
           onClick={() =>
             startTransition(async () => {
               await updateDriveStatusAction(driveId, s);
-              toast(`Drive status set to ${s.replace("_", " ")}.`);
+              toast(`Drive status set to ${s.replace("_", " ").toLowerCase()}.`);
             })
           }
           className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
@@ -30,7 +31,7 @@ export function DriveStatusControl({ driveId, status }: { driveId: string; statu
               : "border-border-soft text-muted hover:border-brand-300"
           }`}
         >
-          {s.replace("_", " ")}
+          {s.replace("_", " ").charAt(0) + s.replace("_", " ").slice(1).toLowerCase()}
         </button>
       ))}
     </div>
@@ -40,7 +41,7 @@ export function DriveStatusControl({ driveId, status }: { driveId: string; statu
 export function BulkMatchButton({ driveId }: { driveId: string }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
-  const [result, setResult] = useState<{ totalEligible: number; processed: number; errors: string[] } | null>(
+  const [result, setResult] = useState<{ totalApplicants: number; needed: number; processed: number; errors: string[] } | null>(
     null
   );
 
@@ -53,22 +54,29 @@ export function BulkMatchButton({ driveId }: { driveId: string }) {
           startTransition(async () => {
             const r = await runBulkMatchingForDriveAction(driveId);
             setResult(r);
-            toast(`Matched ${r.processed}/${r.totalEligible} eligible students.`);
+            toast(
+              r.needed === 0
+                ? "Every applicant already has an AI score."
+                : `Scored ${r.processed} of ${r.needed} applicants.`
+            );
           })
         }
       >
         <Sparkles className="h-4 w-4" />
-        {isPending ? "Running AI matching..." : "Run AI matching for all eligible students"}
+        {isPending ? "Running AI matching..." : "Run AI matching for applicants"}
       </Button>
       {isPending && (
-        <p className="text-xs text-muted mt-2">
-          Calling Gemma once per eligible student — this can take a while locally. Feel free to wait.
-        </p>
+        <div className="mt-2 space-y-1">
+          <AiWaitNote show label="This can take up to a minute for each applicant." />
+          <p className="text-xs text-muted">Gemma scores one applicant at a time. You can keep this page open.</p>
+        </div>
       )}
       {result && (
         <p className="text-xs text-muted mt-2">
-          Matched {result.processed}/{result.totalEligible} eligible students.
-          {result.errors.length > 0 && ` ${result.errors.length} failed.`}
+          {result.needed === 0
+            ? `All ${result.totalApplicants} applicants already have a score.`
+            : `Scored ${result.processed} of ${result.needed} applicants without a score.`}
+          {result.errors.length > 0 && ` ${result.errors.length} could not be scored.`}
         </p>
       )}
     </div>
@@ -93,7 +101,7 @@ export function EligibilityForm({
           toast("Eligibility rules saved.");
           setTimeout(() => setSaved(false), 2000);
         } catch (err) {
-          toast((err as Error).message || "Couldn't save — try again.", "error");
+          toast((err as Error).message || "Couldn't save. Please try again.", "error");
         }
       }}
       className="grid grid-cols-1 sm:grid-cols-2 gap-3"
@@ -110,18 +118,27 @@ export function EligibilityForm({
         placeholder="Max backlogs"
         className="rounded-lg border border-border-soft px-3 py-2 text-sm"
       />
-      <input
-        name="eligibleBranches"
-        defaultValue={defaults.eligibleBranches}
-        placeholder="Eligible specializations (comma-separated)"
-        className="col-span-2 rounded-lg border border-border-soft px-3 py-2 text-sm"
-      />
-      <input
-        name="eligibleGradYears"
-        defaultValue={defaults.eligibleGradYears}
-        placeholder="Eligible grad years (comma-separated)"
-        className="col-span-2 rounded-lg border border-border-soft px-3 py-2 text-sm"
-      />
+      <div className="col-span-2">
+        <label className="text-xs text-muted block mb-1">Specialization</label>
+        <p className="text-[11px] text-muted/80 mb-1.5 leading-snug">
+          Enter &apos;All&apos; to allow candidates from any specialization.
+        </p>
+        <input
+          name="eligibleBranches"
+          defaultValue={defaults.eligibleBranches}
+          placeholder="e.g. Data Science, Cloud Computing or All"
+          className="w-full rounded-lg border border-border-soft px-3 py-2 text-sm"
+        />
+      </div>
+      <div className="col-span-2">
+        <label className="text-xs text-muted block mb-1.5">Graduation years (comma-separated)</label>
+        <input
+          name="eligibleGradYears"
+          defaultValue={defaults.eligibleGradYears}
+          placeholder="e.g. 2026"
+          className="w-full rounded-lg border border-border-soft px-3 py-2 text-sm"
+        />
+      </div>
       <div className="col-span-2 flex items-center gap-3">
         <Button type="submit" size="sm" variant="secondary">
           Save eligibility rules

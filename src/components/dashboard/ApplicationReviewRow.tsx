@@ -2,16 +2,15 @@
 
 import { useState, useTransition } from "react";
 import { updateApplicationStageAction } from "@/lib/actions/matching";
-import { scheduleInterviewAction } from "@/lib/actions/offers";
 import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { stageLabel } from "@/lib/utils";
-import { Award, AlertTriangle } from "lucide-react";
+import { Award } from "lucide-react";
 import Link from "next/link";
 import { RejectWithFeedback } from "./RejectWithFeedback";
 import { ViewResumeLink } from "./ViewResumeLink";
-import { DayLoadHint } from "./DayLoadHint";
+import { ScheduleInterviewForm } from "./ScheduleInterviewForm";
 
 interface Props {
   application: {
@@ -38,6 +37,7 @@ const stageTone: Record<string, "neutral" | "brand" | "success" | "warning" | "d
   OFFER_DECLINED: "danger",
   JOINED: "success",
   REJECTED: "danger",
+  WITHDRAWN: "neutral",
 };
 
 const OFFER_PIPELINE_STAGES = ["OFFER_REQUESTED", "OFFER_SENT", "OFFER_ACCEPTED", "OFFER_DECLINED", "JOINED"];
@@ -48,39 +48,12 @@ export function ApplicationReviewRow({ application }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [scheduling, setScheduling] = useState(false);
   const [rejecting, setRejecting] = useState(false);
-  const [dateValue, setDateValue] = useState("");
-  const [clash, setClash] = useState<{ notes: string[]; hard: boolean; data: FormData } | null>(null);
-  const [reason, setReason] = useState("");
-
-  /** Tries to schedule. On a clash nothing is saved; the TPO sees why and may choose "Schedule anyway". */
-  async function submitSchedule(formData: FormData, override: boolean) {
-    formData.set("applicationId", application.id);
-    formData.set("driveId", application.driveId);
-    if (override) {
-      formData.set("override", "1");
-      formData.set("overrideReason", reason);
-    }
-    try {
-      const r = await scheduleInterviewAction(formData);
-      if (!r.saved) {
-        setClash({ notes: r.conflict.notes, hard: r.conflict.notes.some((n) => n.startsWith("Student already")), data: formData });
-        return;
-      }
-      setClash(null);
-      setReason("");
-      setDateValue("");
-      setScheduling(false);
-      toast(r.conflict.hasConflict ? "Scheduled as a TPO override." : "Interview scheduled.");
-    } catch (err) {
-      toast((err as Error).message, "error");
-    }
-  }
 
   function confirmReject(note: string) {
     startTransition(async () => {
       try {
         await updateApplicationStageAction(application.id, "REJECTED", note);
-        toast(`${application.student.user.name} rejected${note.trim() ? " with feedback" : ""}.`);
+        toast(`${application.student.user.name} marked as not selected${note.trim() ? ", with feedback" : ""}.`);
         setRejecting(false);
       } catch (err) {
         toast((err as Error).message, "error");
@@ -90,8 +63,12 @@ export function ApplicationReviewRow({ application }: Props) {
 
   function setStage(stage: "SHORTLISTED" | "INTERVIEW" | "SELECTED", label: string) {
     startTransition(async () => {
-      await updateApplicationStageAction(application.id, stage);
-      toast(`${application.student.user.name} ${label}.`);
+      try {
+        await updateApplicationStageAction(application.id, stage);
+        toast(`${application.student.user.name} ${label}.`);
+      } catch (err) {
+        toast((err as Error).message, "error");
+      }
     });
   }
 
@@ -101,7 +78,7 @@ export function ApplicationReviewRow({ application }: Props) {
     <div className="border-b border-border-soft py-4 last:border-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink truncate">{application.student.user.name}</p>
+          <p className="text-sm font-medium text-ink break-words">{application.student.user.name}</p>
           <p className="text-xs text-muted">
             {application.student.rollNo} · {application.student.branch} · CGPA {application.student.cgpa.toFixed(2)}
           </p>
@@ -116,9 +93,11 @@ export function ApplicationReviewRow({ application }: Props) {
             </Badge>
           )}
           {application.fitScore != null && (
-            <span className="text-sm font-semibold text-brand-600">{application.fitScore}</span>
+            <span className="text-sm font-semibold text-brand-600 whitespace-nowrap">Fit {application.fitScore}/100</span>
           )}
-          <Badge tone={stageTone[application.stage] || "neutral"}>{stageLabel(application.stage)}</Badge>
+          <Badge tone={stageTone[application.stage] || "neutral"}>
+            {application.specialConsideration && application.stage === "ELIGIBLE" ? "Recommended" : stageLabel(application.stage)}
+          </Badge>
           {application.matchExplanation && (
             <button
               onClick={() => setExpanded((e) => !e)}
@@ -148,7 +127,7 @@ export function ApplicationReviewRow({ application }: Props) {
         </div>
       )}
 
-      {!inOfferPipeline && (
+      {!inOfferPipeline && application.stage !== "WITHDRAWN" && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setStage("SHORTLISTED", "shortlisted")}>
             Shortlist
@@ -157,17 +136,17 @@ export function ApplicationReviewRow({ application }: Props) {
             Schedule interview
           </Button>
           <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setStage("SELECTED", "marked as selected")}>
-            Mark selected
+            Select (override)
           </Button>
           <Button size="sm" variant="ghost" disabled={isPending} onClick={() => setRejecting((r) => !r)}>
-            Reject
+            Not selected
           </Button>
         </div>
       )}
 
       {rejecting && (
         <RejectWithFeedback
-          confirmLabel="Confirm reject"
+          confirmLabel="Confirm not selected"
           disabled={isPending}
           onConfirm={confirmReject}
           onCancel={() => setRejecting(false)}
@@ -176,80 +155,20 @@ export function ApplicationReviewRow({ application }: Props) {
 
       {inOfferPipeline && (
         <p className="mt-3 text-xs text-muted">
-          This candidate is in the offer pipeline —{" "}
+          This candidate is in the offer process.{" "}
           <Link href="/tpo/offers" className="text-brand-500 hover:text-brand-600 font-medium">
-            manage it from Offers
+            Manage it from Offers
           </Link>
           .
         </p>
       )}
 
       {scheduling && (
-        <form
-          action={(formData) => submitSchedule(formData, false)}
-          className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-surface rounded-lg p-3 border border-border-soft"
-        >
-          <label className="sm:col-span-2 text-xs text-muted">
-            Interview round
-            <input name="stage" placeholder="e.g. Technical Round 1" className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink" required />
-          </label>
-          <label className="text-xs text-muted">
-            Date &amp; time
-            <input name="scheduledAt" type="datetime-local" onChange={(e) => { setDateValue(e.target.value); setClash(null); }} className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink" required />
-            <DayLoadHint date={dateValue} />
-          </label>
-          <label className="text-xs text-muted">
-            Duration
-            <select name="durationMins" defaultValue="30" className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink">
-              {[15, 30, 45, 60, 90, 120].map((m) => (
-                <option key={m} value={m}>
-                  {m} minutes
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-muted">
-            Venue / meeting link
-            <input name="venue" placeholder="e.g. Seminar Hall A" className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink" />
-          </label>
-          <label className="text-xs text-muted">
-            Interview panel
-            <input name="panel" placeholder="e.g. Panel 1" className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink" />
-          </label>
-          {clash && (
-            <div className={`sm:col-span-2 rounded-lg border p-3 text-sm ${clash.hard ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-              <p className="flex items-center gap-1.5 font-medium">
-                <AlertTriangle className="h-4 w-4" /> {clash.hard ? "This clashes with the student's own schedule" : "This time clashes"}
-              </p>
-              <ul className="mt-1.5 list-disc list-inside text-xs space-y-0.5">
-                {clash.notes.map((n, i) => (
-                  <li key={i}>{n}</li>
-                ))}
-              </ul>
-              {clash.hard && <p className="mt-1.5 text-xs">The student can&apos;t be in two places at once. You can still override if you have arranged it.</p>}
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                maxLength={300}
-                placeholder="Reason for the override (optional), e.g. recruiter is only free then"
-                className="mt-2 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink"
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button type="button" size="sm" disabled={isPending} onClick={() => startTransition(() => submitSchedule(clash.data, true))}>
-                  Schedule anyway
-                </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setClash(null)}>
-                  Change the time
-                </Button>
-              </div>
-            </div>
-          )}
-          {!clash && (
-            <Button type="submit" size="sm" className="sm:col-span-2 w-fit">
-              Confirm schedule
-            </Button>
-          )}
-        </form>
+        <ScheduleInterviewForm
+          applicationId={application.id}
+          driveId={application.driveId}
+          onDone={() => setScheduling(false)}
+        />
       )}
     </div>
   );

@@ -11,15 +11,15 @@ export default function AssessmentScoresPage() {
       </Link>
       <h1 className="text-2xl font-semibold text-ink">Assessment Scores</h1>
       <p className="text-muted text-sm mt-1">
-        Import aptitude, reasoning, verbal and communication scores from your placement test — these feed
-        directly into each student&apos;s AI readiness analysis.
+        Import aptitude, reasoning, verbal and communication scores from your placement test. They feed into each
+        student&apos;s AI readiness analysis. You can also include them in the student import.
       </p>
 
       <Card className="mt-8 max-w-3xl">
         <CardHeader>
           <CardTitle>Paste or import scores</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <ScoresPasteForm />
         </CardContent>
       </Card>

@@ -7,10 +7,11 @@ import { setSessionCookie } from "@/lib/auth";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { safeErrorMessage } from "@/lib/safeError";
 import { normalizePhone } from "@/lib/phone";
+import { normalizeRollNo, tidyName } from "@/lib/normalize";
 import { createHash, timingSafeEqual } from "crypto";
 
 const base = {
-  name: z.string().trim().min(2, "Please enter your full name.").max(100),
+  name: z.string().trim().min(2, "Please enter your full name.").max(100).transform((v) => tidyName(v)),
   email: z.string().trim().toLowerCase().email("Please enter a valid email address.").max(200),
   password: z.string().min(6, "Password must be at least 6 characters.").max(200),
 };
@@ -36,7 +37,12 @@ const schema = z.discriminatedUnion("role", [
   z.object({
     role: z.literal("STUDENT"),
     ...base,
-    rollNo: z.string().trim().min(1, "Please enter your roll number.").max(50),
+    rollNo: z
+      .string()
+      .trim()
+      .min(1, "Please enter your roll number.")
+      .max(50)
+      .transform((v) => normalizeRollNo(v)),
   }),
   // First TPO for this deployment names the college (+ optional email domain for
   // student verification); every TPO after that just joins the existing one.
@@ -134,7 +140,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (data.role === "STUDENT") {
-        const pending = await tx.pendingStudent.findUnique({ where: { rollNo: data.rollNo.trim() } });
+        const pending = await tx.pendingStudent.findUnique({ where: { rollNo: data.rollNo } });
         if (!pending) {
           throw new Error(
             "No record found for that roll number. Ask your placement cell to add you, then try again."
@@ -158,14 +164,32 @@ export async function POST(req: NextRequest) {
             cgpa: pending.cgpa,
             backlogs: pending.backlogs,
             graduationYear: pending.graduationYear,
+            // Scores that came with the roster file move across with the student.
+            aptitudeScore: pending.aptitudeScore,
+            reasoningScore: pending.reasoningScore,
+            verbalScore: pending.verbalScore,
+            communicationScore: pending.communicationScore,
           },
         });
         await tx.pendingStudent.delete({ where: { id: pending.id } });
       }
 
       if (data.role === "RECRUITER") {
+        // Starts as PENDING: the placement cell approves each company before it can post drives.
         await tx.recruiter.create({
-          data: { userId: created.id, companyName: data.companyName, industry: data.industry || null },
+          data: {
+            userId: created.id,
+            companyName: data.companyName,
+            industry: data.industry || null,
+            status: "PENDING",
+          },
+        });
+        await tx.tpoNotification.create({
+          data: {
+            type: "GENERAL",
+            title: "New recruiter waiting for approval",
+            message: `${data.name} from ${data.companyName} signed up as a recruiter. Review the request under Recruiters.`,
+          },
         });
       }
       return created;

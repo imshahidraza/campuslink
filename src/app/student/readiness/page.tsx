@@ -19,7 +19,7 @@ export default async function ReadinessPage() {
     <div>
       <h1 className="text-2xl font-semibold text-ink">Placement Readiness</h1>
       <p className="text-muted text-sm mt-1">
-        AI-analyzed from your academic record and profile — not a prediction, a snapshot to help you improve.
+        AI-analyzed from your academic record and profile. It is a snapshot to help you improve, not a prediction.
       </p>
       <div className="mt-8">
         <ReadinessPanel existing={existing} preferredRoles={student.preferredRoles} />

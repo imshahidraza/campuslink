@@ -5,6 +5,7 @@ import { Sparkles, Target } from "lucide-react";
 import { generateRoadmapAction } from "@/lib/actions/student";
 import { Button } from "@/components/ui/Button";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { fmtDate } from "@/lib/format";
 
 export interface RoadmapData {
   steps: { skill: string; whyItMatters: string; howToLearn: string; miniProject: string }[];
@@ -41,7 +42,7 @@ export function RoadmapCard({ existing, updatedAt }: { existing: RoadmapData | n
 
         {data && data.steps.length === 0 && (
           <p className="mt-4 text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">
-            Nice — your profile already covers every skill listed by the drives you&apos;re eligible for.
+            Nice, your profile already covers every skill listed by the drives you&apos;re eligible for.
           </p>
         )}
 
@@ -71,7 +72,7 @@ export function RoadmapCard({ existing, updatedAt }: { existing: RoadmapData | n
                 </div>
               );
             })}
-            {updatedAt && <p className="text-xs text-muted">Last built {new Date(updatedAt).toLocaleDateString()}.</p>}
+            {updatedAt && <p className="text-xs text-muted">Last built {fmtDate(updatedAt)}.</p>}
           </div>
         )}
 

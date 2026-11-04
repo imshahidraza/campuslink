@@ -5,7 +5,7 @@ import { sendOfferToStudentAction, verifyDocumentsAction, markJoinedAction } fro
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Card";
 import { useToast } from "@/components/ui/Toast";
-import { stageLabel } from "@/lib/utils";
+import { journeyLabel } from "@/lib/utils";
 
 interface OfferApplication {
   id: string;
@@ -32,14 +32,13 @@ export function OfferRow({ application }: { application: OfferApplication }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-soft py-3 last:border-0">
       <div>
-        <p className="text-sm font-medium text-ink">{application.student.user.name}</p>
+        <p className="text-sm font-medium text-ink break-words">{application.student.user.name}</p>
         <p className="text-xs text-muted">
-          {application.drive.jobRole} · {application.drive.companyName} · {application.offerPackage || "—"}
-          {application.stage === "OFFER_ACCEPTED" && application.documentsVerified && " · Documents verified"}
+          {application.drive.jobRole} · {application.drive.companyName}{application.offerPackage ? ` · ${application.offerPackage}` : ""}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={stageTone[application.stage] || "neutral"}>{stageLabel(application.stage)}</Badge>
+        <Badge tone={stageTone[application.stage] || "neutral"}>{journeyLabel(application.stage, application.documentsVerified)}</Badge>
 
         {application.stage === "OFFER_REQUESTED" && (
           <Button
@@ -61,7 +60,7 @@ export function OfferRow({ application }: { application: OfferApplication }) {
         )}
 
         {application.stage === "OFFER_SENT" && (
-          <span className="text-xs text-muted">Awaiting student response</span>
+          <span className="text-xs text-muted">Waiting for the student to reply</span>
         )}
 
         {application.stage === "OFFER_ACCEPTED" && !application.documentsVerified && (
@@ -73,14 +72,14 @@ export function OfferRow({ application }: { application: OfferApplication }) {
               startTransition(async () => {
                 try {
                   await verifyDocumentsAction(application.id);
-                  toast("Documents verified.");
+                  toast("Documents marked as verified.");
                 } catch (err) {
                   toast((err as Error).message, "error");
                 }
               })
             }
           >
-            Verify documents
+            Documents verified
           </Button>
         )}
 
@@ -99,7 +98,7 @@ export function OfferRow({ application }: { application: OfferApplication }) {
               })
             }
           >
-            Mark joined
+            Mark as joined
           </Button>
         )}
       </div>

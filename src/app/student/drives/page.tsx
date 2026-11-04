@@ -7,7 +7,7 @@ export default async function DrivesPage() {
   const { student: studentBase } = await requireStudentOrRedirect();
   const student = await prisma.student.findUniqueOrThrow({
     where: { id: studentBase.id },
-    include: { applications: true },
+    include: { applications: true, matches: true },
   });
 
   const openDrives = await prisma.drive.findMany({
@@ -26,6 +26,7 @@ export default async function DrivesPage() {
   });
 
   const appByDrive = new Map(student.applications.map((a) => [a.driveId, a]));
+  const matchByDrive = new Map(student.matches.map((m) => [m.driveId, m]));
   const eligibleCount = drivesWithEligibility.filter(
     (d) => d.eligibility.eligible || appByDrive.get(d.drive.id)?.specialConsideration
   ).length;
@@ -34,13 +35,15 @@ export default async function DrivesPage() {
     <div>
       <h1 className="text-2xl font-semibold text-ink">Drives &amp; AI Matching</h1>
       <p className="text-muted text-sm mt-1">
-        {eligibleCount} of {openDrives.length} open drive{openDrives.length === 1 ? "" : "s"} you&apos;re
-        eligible for, based on CGPA, backlogs, specialization and graduation year.
+        You are eligible for {eligibleCount} of {openDrives.length} open drive{openDrives.length === 1 ? "" : "s"},
+        based on CGPA, backlogs, specialization and graduation year. Check your AI fit first if you like, then press
+        Apply.
       </p>
 
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
         {drivesWithEligibility.map(({ drive, eligibility, fixes }) => {
           const app = appByDrive.get(drive.id);
+          const match = app && app.stage !== "WITHDRAWN" ? app : matchByDrive.get(drive.id) ?? app;
           return (
             <StudentDriveCard
               key={drive.id}
@@ -52,25 +55,28 @@ export default async function DrivesPage() {
                 jdRequiredSkills: drive.jdRequiredSkills,
                 venue: drive.venue,
                 driveDate: drive.driveDate ? drive.driveDate.toISOString() : null,
+                status: drive.status,
+                applyDeadline: drive.applyDeadline ? drive.applyDeadline.toISOString() : null,
               }}
               eligible={eligibility.eligible || Boolean(app?.specialConsideration)}
               ineligibleReasons={eligibility.reasons}
               ineligibleFixes={fixes}
               specialConsideration={Boolean(app?.specialConsideration)}
               existing={
-                app
+                match
                   ? {
-                      fitScore: app.fitScore,
-                      matchedSkills: app.matchedSkills,
-                      missingSkills: app.missingSkills,
-                      matchExplanation: app.matchExplanation,
+                      fitScore: match.fitScore,
+                      matchedSkills: match.matchedSkills,
+                      missingSkills: match.missingSkills,
+                      matchExplanation: match.matchExplanation,
                     }
                   : null
               }
+              application={app ? { stage: app.stage, documentsVerified: app.documentsVerified } : null}
             />
           );
         })}
-        {openDrives.length === 0 && <p className="text-sm text-muted">No open drives right now. Check back soon.</p>}
+        {openDrives.length === 0 && <p className="text-sm text-muted">No drives are open right now. Please check back soon.</p>}
       </div>
     </div>
   );

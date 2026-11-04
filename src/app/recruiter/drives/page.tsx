@@ -17,9 +17,11 @@ export default async function RecruiterDrivesPage() {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-ink">My Drives</h1>
-        <LinkButton href="/recruiter/drives/new" size="sm">
-          <Plus className="h-4 w-4" /> New drive
-        </LinkButton>
+        {recruiterBase.status === "APPROVED" && (
+          <LinkButton href="/recruiter/drives/new" size="sm">
+            <Plus className="h-4 w-4" /> New drive
+          </LinkButton>
+        )}
       </div>
 
       <div className="mt-8 space-y-3">

@@ -119,13 +119,13 @@ export function DashboardShell({
               onClick={() => setMobileOpen(false)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors",
-                active ? "bg-white/10 text-white" : "text-white/55 hover:text-white hover:bg-white/5"
+                active ? "bg-accent-lime text-brand-950 font-medium" : "text-white/60 hover:text-white hover:bg-white/5"
               )}
             >
               <Icon className="h-4 w-4" />
               <span className="flex-1">{item.label}</span>
               {showBadge && (
-                <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-accent-lime text-brand-900 text-[11px] font-semibold flex items-center justify-center">
+                <span className="min-w-[1.25rem] h-5 px-1.5 rounded-full bg-accent-lime text-brand-950 text-[11px] font-semibold flex items-center justify-center">
                   {notificationCount > 99 ? "99+" : notificationCount}
                 </span>
               )}

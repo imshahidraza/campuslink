@@ -29,7 +29,7 @@ export function ResumeFeedback({ existing, canReview }: { existing: ResumeFeedba
   return (
     <div>
       <p className="text-sm text-muted">
-        Get specific, friendly suggestions on your resume. It&apos;s advice only — nothing here affects your eligibility or score.
+        Get specific, friendly suggestions on your resume. It&apos;s advice only. Nothing here affects your eligibility or score.
       </p>
 
       {data && (

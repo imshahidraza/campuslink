@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { MarkReadButton } from "@/components/dashboard/MarkReadButton";
 import { markRecruiterNotificationReadAction } from "@/lib/actions/offers";
 import { cn } from "@/lib/utils";
+import { fmtDateTime } from "@/lib/format";
 
 export default async function RecruiterNotificationsPage() {
   const { recruiter } = await requireRecruiterOrRedirect();
@@ -25,7 +26,7 @@ export default async function RecruiterNotificationsPage() {
               <div>
                 <p className="text-sm font-medium text-ink">{n.title}</p>
                 <p className="text-sm text-muted mt-1">{n.message}</p>
-                <p className="text-[11px] text-muted mt-2">{new Date(n.createdAt).toLocaleString()}</p>
+                <p className="text-[11px] text-muted mt-2">{fmtDateTime(n.createdAt)}</p>
               </div>
               {!n.read && <MarkReadButton onMarkRead={markRecruiterNotificationReadAction.bind(null, n.id)} />}
             </CardContent>

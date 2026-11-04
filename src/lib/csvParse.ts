@@ -42,3 +42,25 @@ export function detectHeaderMapping<F extends string>(
   }
   return mapping;
 }
+
+/**
+ * Like detectHeaderMapping, but `optional` fields don't have to be present.
+ * Returns null unless EVERY required field is found (then it is not a header row).
+ * Optional fields that are found get a column index; the rest are left undefined.
+ */
+export function detectHeaderMappingWithOptional<R extends string, O extends string>(
+  headerCells: string[],
+  required: Record<R, string[]>,
+  optional: Record<O, string[]>
+): (Record<R, number> & Partial<Record<O, number>>) | null {
+  const base = detectHeaderMapping(headerCells, required);
+  if (!base) return null;
+  const normalized = headerCells.map(normalizeHeader);
+  const out = { ...base } as Record<R, number> & Partial<Record<O, number>>;
+  for (const field of Object.keys(optional) as O[]) {
+    const candidates = optional[field].map(normalizeHeader);
+    const idx = normalized.findIndex((h) => candidates.includes(h));
+    if (idx !== -1) (out as Partial<Record<O, number>>)[field] = idx;
+  }
+  return out;
+}

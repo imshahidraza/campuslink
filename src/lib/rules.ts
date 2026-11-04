@@ -5,6 +5,8 @@
  * conflicts, offer/document status) lives here.
  */
 
+import { isAllValue } from "./normalize";
+
 export interface EligibilityInput {
   cgpa: number;
   backlogs: number;
@@ -15,13 +17,23 @@ export interface EligibilityInput {
 export interface EligibilityRule {
   minCgpa: number | null;
   maxBacklogs: number | null;
-  eligibleBranches: string[]; // empty array = all specializations eligible
+  eligibleBranches: string[]; // empty array (or "All") = every specialization is eligible
   eligibleGradYears: number[]; // empty array = all years eligible
 }
 
 export interface EligibilityResult {
   eligible: boolean;
   reasons: string[]; // failed checks, empty if eligible
+}
+
+/** A drive limits specializations only when it lists some and none of them is "All" (any casing). */
+function branchRestricted(rule: EligibilityRule): boolean {
+  return rule.eligibleBranches.length > 0 && !rule.eligibleBranches.some(isAllValue);
+}
+
+function branchAllowed(rule: EligibilityRule, branch: string): boolean {
+  const mine = branch.trim().toUpperCase();
+  return rule.eligibleBranches.some((b) => b.trim().toUpperCase() === mine);
 }
 
 export function checkEligibility(
@@ -36,7 +48,7 @@ export function checkEligibility(
   if (rule.maxBacklogs !== null && student.backlogs > rule.maxBacklogs) {
     reasons.push(`${student.backlogs} backlog(s) exceed allowed maximum of ${rule.maxBacklogs}`);
   }
-  if (rule.eligibleBranches.length > 0 && !rule.eligibleBranches.map((b) => b.toUpperCase()).includes(student.branch.toUpperCase())) {
+  if (branchRestricted(rule) && !branchAllowed(rule, student.branch)) {
     reasons.push(`Specialization "${student.branch}" is not in eligible specializations (${rule.eligibleBranches.join(", ")})`);
   }
   if (rule.eligibleGradYears.length > 0 && !rule.eligibleGradYears.includes(student.graduationYear)) {
@@ -68,7 +80,7 @@ export function eligibilityFixes(student: EligibilityInput, rule: EligibilityRul
       fix: `Clearing ${n} backlog${n === 1 ? "" : "s"} would make you eligible for drives like this next time.`,
     });
   }
-  if (rule.eligibleBranches.length > 0 && !rule.eligibleBranches.map((b) => b.toUpperCase()).includes(student.branch.toUpperCase())) {
+  if (branchRestricted(rule) && !branchAllowed(rule, student.branch)) {
     out.push({
       problem: `This drive is open to ${rule.eligibleBranches.join(", ")}; you are in ${student.branch}`,
       fix: "Specialization is fixed by your record. If you think the recruiter would still want you, ask your placement cell to raise it.",
@@ -77,7 +89,7 @@ export function eligibilityFixes(student: EligibilityInput, rule: EligibilityRul
   if (rule.eligibleGradYears.length > 0 && !rule.eligibleGradYears.includes(student.graduationYear)) {
     out.push({
       problem: `This drive is for the ${rule.eligibleGradYears.join(", ")} batch; yours is ${student.graduationYear}`,
-      fix: "Keep an eye out — drives for your batch will appear here.",
+      fix: "Keep an eye out. Drives for your batch will appear here.",
     });
   }
   return out;
@@ -237,7 +249,7 @@ export function autoAllocate(
     if (!done) {
       unscheduled.push({
         applicationId: cand.applicationId,
-        reason: "No free slot left in this window — add a panel, extend the end time, or pick another day.",
+        reason: "No free slot is left in this window. Add a panel, extend the end time, or pick another day.",
       });
     }
   }
@@ -261,7 +273,7 @@ export const APPLICATION_STAGES = [
 export const OFFER_PIPELINE_STAGES = ["OFFER_REQUESTED", "OFFER_SENT", "OFFER_ACCEPTED", "OFFER_DECLINED", "JOINED"] as const;
 
 /** Terminal "branch" stages that fall off the forward stepper entirely. */
-export const TERMINAL_STAGES = ["REJECTED", "OFFER_DECLINED"] as const;
+export const TERMINAL_STAGES = ["REJECTED", "OFFER_DECLINED", "WITHDRAWN"] as const;
 
 export function stageIndex(stage: string): number {
   return APPLICATION_STAGES.indexOf(stage as (typeof APPLICATION_STAGES)[number]);

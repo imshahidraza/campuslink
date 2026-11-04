@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, ShieldCheck } from "lucide-react";
 
-export const metadata = { title: "Privacy & data handling — C-Link" };
+export const metadata = { title: "Privacy and data handling | C-Link" };
 
 const ACCESS: { data: string; student: string; tpo: string; recruiter: string }[] = [
   { data: "Name, roll number, program, specialization", student: "Own", tpo: "All students", recruiter: "Applicants to their drives" },
@@ -9,7 +9,7 @@ const ACCESS: { data: string; student: string; tpo: string; recruiter: string }[
   { data: "Resume PDF", student: "Own", tpo: "All students", recruiter: "Applicants to their drives only" },
   { data: "Skills, projects, AI fit score and explanation", student: "Own", tpo: "All students", recruiter: "Applicants to their drives" },
   { data: "Phone number and email", student: "Own", tpo: "Own (sign-in only)", recruiter: "Own (sign-in only)" },
-  { data: "Rejection feedback notes", student: "Own", tpo: "Those they wrote", recruiter: "Those they wrote" },
+  { data: "Not selected feedback notes", student: "Own", tpo: "Those they wrote", recruiter: "Those they wrote" },
 ];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -97,7 +97,7 @@ export default function PrivacyPage() {
         <Section title="How AI is used">
           <p>
             AI helps read resumes, understand job descriptions and explain a candidate&apos;s fit. It only advises. Eligibility
-            is decided by fixed rules (CGPA, backlogs, program), and every shortlist, rejection and offer is decided by
+            is decided by fixed rules (CGPA, backlogs, program), and every shortlist, not-selected decision and offer is decided by
             a person. The placement cell can override the AI, and every fit score comes with the reasons behind it.
           </p>
           <p>

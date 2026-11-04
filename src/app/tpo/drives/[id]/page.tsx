@@ -129,7 +129,7 @@ export default async function TpoDriveDetail({ params }: { params: Promise<{ id:
                 defaults={{
                   minCgpa: drive.minCgpa?.toString() || "",
                   maxBacklogs: drive.maxBacklogs?.toString() || "",
-                  eligibleBranches: drive.eligibleBranches.join(", "),
+                  eligibleBranches: drive.eligibleBranches.length ? drive.eligibleBranches.join(", ") : "All",
                   eligibleGradYears: drive.eligibleGradYears.join(", "),
                 }}
               />

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { runReadinessAnalysisAction, generatePrepPlanAction } from "@/lib/actions/student";
 import { Button } from "@/components/ui/Button";
+import { AiWaitNote } from "@/components/ui/Loader";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { readinessLabel } from "@/lib/utils";
 import { Sparkles } from "lucide-react";
@@ -60,7 +61,7 @@ export function ReadinessPanel({
           {isPending ? "Analyzing with Gemma..." : result ? "Re-run analysis" : "Run readiness analysis"}
         </Button>
         {isPending && (
-          <span className="text-xs text-muted">Reading your profile locally — this can take a bit.</span>
+          <span className="text-xs text-muted">Reading your profile locally. This can take a bit.</span>
         )}
       </div>
 
@@ -89,9 +90,12 @@ export function ReadinessPanel({
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Personalized prep plan</CardTitle>
-              <Button onClick={handlePrep} disabled={isPrepPending} size="sm" variant="secondary">
-                {isPrepPending ? "Generating..." : "Generate plan"}
-              </Button>
+              <div className="flex items-center gap-3">
+                <AiWaitNote show={isPrepPending} />
+                <Button onClick={handlePrep} disabled={isPrepPending} size="sm" variant="secondary">
+                  {isPrepPending ? "Generating..." : "Generate plan"}
+                </Button>
+              </div>
             </CardHeader>
             {prep && (
               <CardContent className="space-y-3">

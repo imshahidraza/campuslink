@@ -4,13 +4,39 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { parseJobDescription } from "@/lib/ai";
-import { assertCanManageDrive } from "@/lib/access";
+import { assertCanManageDrive, requireApprovedRecruiter } from "@/lib/access";
+import { parseSpecializationList } from "@/lib/normalize";
 
+/** Only an approved recruiter can create or change drives. */
 async function requireRecruiter() {
   const session = await getSession();
   assertRole(session, "RECRUITER");
-  const recruiter = await prisma.recruiter.findUniqueOrThrow({ where: { userId: session.userId } });
-  return recruiter;
+  return requireApprovedRecruiter(session.userId);
+}
+
+/** Last moment to apply: the end of the chosen day, India time. Empty means no deadline. */
+function parseDeadline(raw: FormDataEntryValue | null): Date | null {
+  const v = String(raw || "").trim();
+  if (!v) return null;
+  const d = new Date(`${v}T23:59:59+05:30`);
+  if (Number.isNaN(d.getTime())) throw new Error("Please choose a valid apply-by date.");
+  return d;
+}
+
+function parseEligibilityFields(formData: FormData) {
+  return {
+    minCgpa: formData.get("minCgpa") ? Number(formData.get("minCgpa")) : null,
+    maxBacklogs: formData.get("maxBacklogs") ? Number(formData.get("maxBacklogs")) : null,
+    // "All" (any casing) means any specialization can apply, stored as an empty list.
+    eligibleBranches: parseSpecializationList(String(formData.get("eligibleBranches") || "")),
+    eligibleGradYears: String(formData.get("eligibleGradYears") || "")
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => isValidYear(n)),
+  };
+}
+function isValidYear(n: number) {
+  return Number.isFinite(n) && n > 1990 && n < 2100;
 }
 
 async function requireTpo() {
@@ -24,18 +50,10 @@ export async function createDriveAction(formData: FormData) {
 
   const jobRole = String(formData.get("jobRole") || "");
   const jobDescriptionRaw = String(formData.get("jobDescriptionRaw") || "");
-  const minCgpa = formData.get("minCgpa") ? Number(formData.get("minCgpa")) : null;
-  const maxBacklogs = formData.get("maxBacklogs") ? Number(formData.get("maxBacklogs")) : null;
-  const eligibleBranches = String(formData.get("eligibleBranches") || "")
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-  const eligibleGradYears = String(formData.get("eligibleGradYears") || "")
-    .split(",")
-    .map((s) => Number(s.trim()))
-    .filter((n) => !Number.isNaN(n));
+  const { minCgpa, maxBacklogs, eligibleBranches, eligibleGradYears } = parseEligibilityFields(formData);
   const driveDate = formData.get("driveDate") ? new Date(String(formData.get("driveDate"))) : null;
   const venue = String(formData.get("venue") || "") || null;
+  const applyDeadline = parseDeadline(formData.get("applyDeadline"));
 
   const parsedJD = await parseJobDescription(jobDescriptionRaw, jobRole);
 
@@ -54,6 +72,7 @@ export async function createDriveAction(formData: FormData) {
       eligibleGradYears,
       driveDate,
       venue,
+      applyDeadline,
       status: "DRAFT",
     },
   });
@@ -70,27 +89,14 @@ export async function updateDriveAction(driveId: string, formData: FormData) {
 
   const drive = await prisma.drive.findUniqueOrThrow({ where: { id: driveId } });
 
-  if (session.role === "RECRUITER") {
-    const recruiter = await prisma.recruiter.findUniqueOrThrow({ where: { userId: session.userId } });
-    if (drive.recruiterId !== recruiter.id) {
-      throw new Error("You can only edit your own drives.");
-    }
-  }
+  await assertCanManageDrive(session, drive.recruiterId);
 
   const jobRole = String(formData.get("jobRole") || "");
   const jobDescriptionRaw = String(formData.get("jobDescriptionRaw") || "");
-  const minCgpa = formData.get("minCgpa") ? Number(formData.get("minCgpa")) : null;
-  const maxBacklogs = formData.get("maxBacklogs") ? Number(formData.get("maxBacklogs")) : null;
-  const eligibleBranches = String(formData.get("eligibleBranches") || "")
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-  const eligibleGradYears = String(formData.get("eligibleGradYears") || "")
-    .split(",")
-    .map((s) => Number(s.trim()))
-    .filter((n) => !Number.isNaN(n));
+  const { minCgpa, maxBacklogs, eligibleBranches, eligibleGradYears } = parseEligibilityFields(formData);
   const driveDate = formData.get("driveDate") ? new Date(String(formData.get("driveDate"))) : null;
   const venue = String(formData.get("venue") || "") || null;
+  const applyDeadline = parseDeadline(formData.get("applyDeadline"));
 
   const jdChanged = jobDescriptionRaw.trim() !== drive.jobDescriptionRaw.trim();
   const parsedJD = jdChanged ? await parseJobDescription(jobDescriptionRaw, jobRole) : null;
@@ -106,6 +112,7 @@ export async function updateDriveAction(driveId: string, formData: FormData) {
       eligibleGradYears,
       driveDate,
       venue,
+      applyDeadline,
       ...(parsedJD
         ? {
             jdRequiredSkills: parsedJD.requiredSkills,
@@ -155,16 +162,7 @@ export async function updateDriveStatusAction(
 
 export async function tpoUpdateEligibilityAction(driveId: string, formData: FormData) {
   await requireTpo();
-  const minCgpa = formData.get("minCgpa") ? Number(formData.get("minCgpa")) : null;
-  const maxBacklogs = formData.get("maxBacklogs") ? Number(formData.get("maxBacklogs")) : null;
-  const eligibleBranches = String(formData.get("eligibleBranches") || "")
-    .split(",")
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-  const eligibleGradYears = String(formData.get("eligibleGradYears") || "")
-    .split(",")
-    .map((s) => Number(s.trim()))
-    .filter((n) => !Number.isNaN(n));
+  const { minCgpa, maxBacklogs, eligibleBranches, eligibleGradYears } = parseEligibilityFields(formData);
 
   await prisma.drive.update({
     where: { id: driveId },
@@ -172,4 +170,5 @@ export async function tpoUpdateEligibilityAction(driveId: string, formData: Form
   });
 
   revalidatePath(`/tpo/drives/${driveId}`);
+  revalidatePath("/student/drives");
 }

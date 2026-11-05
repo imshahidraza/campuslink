@@ -4,14 +4,14 @@ import { useState, useTransition } from "react";
 import { CalendarClock, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { DayLoadHint } from "./DayLoadHint";
 import { previewAutoScheduleAction, confirmAutoScheduleAction, type AutoSchedulePlan } from "@/lib/actions/scheduling";
-import { fmtTime } from "@/lib/format";
+import { fmtTime, fmtDay } from "@/lib/format";
 
-interface DriveOption {
-  id: string;
-  label: string;
-  shortlisted: number;
+export interface AutoWindow {
+  dates: string[];
+  start: string;
+  end: string;
+  panels: { name: string; venue: string | null }[];
 }
 
 const inputCls =
@@ -26,21 +26,20 @@ function F({ label, children }: { label: string; children: React.ReactNode }) {
   );
 }
 
-export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
+export function AutoScheduleForm({ driveId, shortlisted, window }: { driveId: string; shortlisted: number; window: AutoWindow }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
-  // Nothing is pre-filled: the TPO enters every value (examples appear only as grey placeholders).
+  // The window is the one agreed with the placement cell. The recruiter chooses the day and the pace.
   const [f, setF] = useState({
-    driveId: drives[0]?.id ?? "",
+    driveId,
     round: "",
-    date: "",
-    startTime: "",
-    endTime: "",
+    date: window.dates.length === 1 ? window.dates[0] : "",
+    startTime: window.start,
+    endTime: window.end,
     durationMins: "",
     gapMins: "",
     breakStart: "",
     breakEnd: "",
-    panels: "",
   });
   const [plan, setPlan] = useState<AutoSchedulePlan | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,10 +48,10 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
     setPlan(null); // any change invalidates the shown preview
   };
 
-  if (drives.length === 0) {
+  if (shortlisted === 0) {
     return (
       <p className="text-sm text-muted">
-        No drive has shortlisted candidates yet. Shortlist candidates on a drive, then come back to schedule them all at once.
+        Nobody is shortlisted yet. Shortlist candidates above, then come back to schedule them all at once.
       </p>
     );
   }
@@ -85,28 +84,27 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
   return (
     <div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <F label="Drive (shortlisted candidates)">
-          <select className={inputCls} value={f.driveId} onChange={(e) => set("driveId", e.target.value)}>
-            {drives.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label} ({d.shortlisted} shortlisted)
-              </option>
-            ))}
-          </select>
-        </F>
         <F label="Round name">
           <input className={inputCls} value={f.round} onChange={(e) => set("round", e.target.value)} maxLength={60} placeholder="e.g. Technical round" />
         </F>
         <F label="Date">
-          <input type="date" className={inputCls} value={f.date} onChange={(e) => set("date", e.target.value)} />
-          <DayLoadHint date={f.date} />
+          <select className={inputCls} value={f.date} onChange={(e) => set("date", e.target.value)}>
+            <option value="" disabled>
+              Choose a confirmed date
+            </option>
+            {window.dates.map((d) => (
+              <option key={d} value={d}>
+                {fmtDay(d)}
+              </option>
+            ))}
+          </select>
         </F>
         <div className="grid grid-cols-2 gap-3">
           <F label="Start">
-            <input type="time" className={inputCls} value={f.startTime} onChange={(e) => set("startTime", e.target.value)} />
+            <input type="time" min={window.start} max={window.end} className={inputCls} value={f.startTime} onChange={(e) => set("startTime", e.target.value)} />
           </F>
           <F label="End">
-            <input type="time" className={inputCls} value={f.endTime} onChange={(e) => set("endTime", e.target.value)} />
+            <input type="time" min={window.start} max={window.end} className={inputCls} value={f.endTime} onChange={(e) => set("endTime", e.target.value)} />
           </F>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -125,15 +123,16 @@ export function AutoScheduleForm({ drives }: { drives: DriveOption[] }) {
             <input type="time" className={inputCls} value={f.breakEnd} onChange={(e) => set("breakEnd", e.target.value)} />
           </F>
         </div>
-        <div className="sm:col-span-2">
-          <F label="Panels, one per line, with a room if you like: “Panel A @ Room 101”">
-            <textarea rows={3} className={inputCls} value={f.panels} onChange={(e) => set("panels", e.target.value)} placeholder={"Panel A @ Room 101\nPanel B @ Room 102"} />
-          </F>
+        <div className="sm:col-span-2 rounded-lg bg-surface border border-border-soft px-3 py-2">
+          <p className="text-xs text-muted">Panels agreed with the placement cell</p>
+          <p className="text-sm text-ink mt-0.5">
+            {window.panels.map((p) => (p.venue ? `${p.name} (${p.venue})` : p.name)).join(", ")}
+          </p>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button size="sm" onClick={preview} disabled={isPending || !f.date || !f.startTime || !f.endTime || !f.durationMins || !f.panels.trim() || !f.round.trim()}>
+        <Button size="sm" onClick={preview} disabled={isPending || !f.date || !f.startTime || !f.endTime || !f.durationMins || !f.round.trim()}>
           <CalendarClock className="h-4 w-4" />
           {isPending && !plan ? "Building..." : "Preview timetable"}
         </Button>

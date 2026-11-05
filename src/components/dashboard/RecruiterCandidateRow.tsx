@@ -2,7 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { updateApplicationStageAction } from "@/lib/actions/matching";
-import { requestOfferAction } from "@/lib/actions/offers";
+import {
+  requestOfferAction,
+  editOfferRequestAction,
+  cancelOfferRequestAction,
+  withdrawOfferAction,
+  markJoinedAction,
+} from "@/lib/actions/offers";
 import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -10,9 +16,11 @@ import { journeyLabel } from "@/lib/utils";
 import { Award } from "lucide-react";
 import { RejectWithFeedback } from "./RejectWithFeedback";
 import { ViewResumeLink } from "./ViewResumeLink";
-import { ScheduleInterviewForm } from "./ScheduleInterviewForm";
+import { ScheduleInterviewForm, type ConfirmedWindow } from "./ScheduleInterviewForm";
 
 interface Props {
+  /** The interview window agreed with the placement cell, or null until it is confirmed. */
+  window: ConfirmedWindow | null;
   application: {
     id: string;
     driveId: string;
@@ -23,6 +31,8 @@ interface Props {
     relevantProjects: string[];
     matchExplanation: string | null;
     offerPackage?: string | null;
+    offerMessage?: string | null;
+    offerWithdrawnNote?: string | null;
     documentsVerified?: boolean;
     specialConsideration?: boolean;
     specialConsiderationNote?: string | null;
@@ -53,13 +63,16 @@ const stageTone: Record<string, "neutral" | "brand" | "success" | "warning" | "d
 };
 
 /** What the recruiter can do at each stage. Request Offer appears once a candidate is selected. */
-export function RecruiterCandidateRow({ application }: Props) {
+export function RecruiterCandidateRow({ application, window }: Props) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
   const [requestingOffer, setRequestingOffer] = useState(false);
   const [passing, setPassing] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [editingOffer, setEditingOffer] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawReason, setWithdrawReason] = useState("");
 
   const stage = application.stage;
   const name = application.student.user.name;
@@ -106,7 +119,7 @@ export function RecruiterCandidateRow({ application }: Props) {
             <ViewResumeLink studentId={application.student.id} hasResume={!!application.student.resume} />
           </div>
           {application.specialConsideration && application.specialConsiderationNote && (
-            <p className="text-xs text-amber-800 mt-2 leading-relaxed">
+            <p className="text-xs text-amber-800 mt-2 leading-relaxed whitespace-pre-line">
               <span className="font-medium">Placement cell note:</span> {application.specialConsiderationNote}
             </p>
           )}
@@ -162,7 +175,7 @@ export function RecruiterCandidateRow({ application }: Props) {
             </Button>
           )}
           {(stage === "SHORTLISTED" || stage === "INTERVIEW") && (
-            <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setScheduling((s) => !s)}>
+            <Button size="sm" variant="secondary" disabled={isPending || !window} onClick={() => setScheduling((s) => !s)}>
               {stage === "INTERVIEW" ? "Schedule another round" : "Schedule interview"}
             </Button>
           )}
@@ -177,10 +190,14 @@ export function RecruiterCandidateRow({ application }: Props) {
         </div>
       )}
 
-      {scheduling && (stage === "SHORTLISTED" || stage === "INTERVIEW") && (
+      {!window && (stage === "SHORTLISTED" || stage === "INTERVIEW") && (
+        <p className="mt-2 text-xs text-muted">Interviews can be booked once the placement cell confirms your dates (see the schedule card above).</p>
+      )}
+      {scheduling && window && (stage === "SHORTLISTED" || stage === "INTERVIEW") && (
         <ScheduleInterviewForm
           applicationId={application.id}
           driveId={application.driveId}
+          window={window}
           onDone={() => setScheduling(false)}
         />
       )}
@@ -194,10 +211,16 @@ export function RecruiterCandidateRow({ application }: Props) {
         />
       )}
 
+      {stage === "SELECTED" && application.offerWithdrawnNote && !requestingOffer && (
+        <p className="mt-3 text-xs text-amber-800 whitespace-pre-line">
+          <span className="font-medium">You withdrew the earlier offer:</span> {application.offerWithdrawnNote}
+        </p>
+      )}
+
       {stage === "SELECTED" && !requestingOffer && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => setRequestingOffer(true)}>
-            Request offer
+            {application.offerWithdrawnNote ? "Send a corrected offer" : "Request offer"}
           </Button>
           <Button size="sm" variant="ghost" disabled={isPending} onClick={() => setPassing((p) => !p)}>
             Not selected
@@ -206,53 +229,211 @@ export function RecruiterCandidateRow({ application }: Props) {
       )}
 
       {stage === "SELECTED" && requestingOffer && (
-        <form
-          action={(formData) => {
+        <OfferForm
+          title="Offer for the candidate"
+          submitLabel="Send to placement cell"
+          busy={isPending}
+          onCancel={() => setRequestingOffer(false)}
+          onSubmit={(fd) =>
             startTransition(async () => {
               try {
-                await requestOfferAction(application.id, formData);
+                await requestOfferAction(application.id, fd);
                 toast("Offer request sent to the placement cell for review.");
                 setRequestingOffer(false);
               } catch (err) {
                 toast((err as Error).message, "error");
               }
-            });
-          }}
-          className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-end gap-2 bg-surface rounded-lg p-3 border border-border-soft"
-        >
-          <div className="flex-1">
-            <label className="text-xs text-muted mb-1 block">Package to offer</label>
-            <input
-              name="offerPackage"
-              placeholder="e.g. 12 LPA"
-              required
-              className="w-full rounded-lg border border-border-soft px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={isPending}>
-              {isPending ? "Sending..." : "Send to placement cell"}
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setRequestingOffer(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+            })
+          }
+        />
       )}
 
-      {stage === "OFFER_REQUESTED" && (
-        <p className="mt-3 text-xs text-muted">Waiting for the placement cell to forward this offer to the student.</p>
+      {stage === "OFFER_REQUESTED" && !editingOffer && (
+        <div className="mt-3">
+          {application.offerMessage && (
+            <p className="text-xs text-muted whitespace-pre-line mb-2">Your message: {application.offerMessage}</p>
+          )}
+          <p className="text-xs text-muted">Waiting for the placement cell to forward this offer to the student.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setEditingOffer(true)}>
+              Edit offer
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isPending}
+              onClick={() =>
+                startTransition(async () => {
+                  try {
+                    await cancelOfferRequestAction(application.id);
+                    toast("Offer request cancelled.", "info");
+                  } catch (err) {
+                    toast((err as Error).message, "error");
+                  }
+                })
+              }
+            >
+              Cancel request
+            </Button>
+          </div>
+        </div>
       )}
-      {stage === "OFFER_SENT" && <p className="mt-3 text-xs text-muted">Offer sent. Waiting for the student&apos;s reply.</p>}
-      {stage === "OFFER_ACCEPTED" && (
-        <p className="mt-3 text-xs text-muted">
-          {application.documentsVerified
-            ? "Offer accepted and documents verified. The placement cell will mark the student as joined."
-            : "Offer accepted. The placement cell is verifying the student's documents."}
-        </p>
+
+      {stage === "OFFER_REQUESTED" && editingOffer && (
+        <OfferForm
+          title="Edit the offer"
+          submitLabel="Save changes"
+          busy={isPending}
+          defaults={{ offerPackage: application.offerPackage ?? "", offerMessage: application.offerMessage ?? "" }}
+          onCancel={() => setEditingOffer(false)}
+          onSubmit={(fd) =>
+            startTransition(async () => {
+              try {
+                await editOfferRequestAction(application.id, fd);
+                toast("Offer updated.");
+                setEditingOffer(false);
+              } catch (err) {
+                toast((err as Error).message, "error");
+              }
+            })
+          }
+        />
+      )}
+
+      {(stage === "OFFER_SENT" || stage === "OFFER_ACCEPTED") && (
+        <div className="mt-3">
+          {application.offerMessage && (
+            <p className="text-xs text-muted whitespace-pre-line mb-2">Your message: {application.offerMessage}</p>
+          )}
+          <p className="text-xs text-muted">
+            {stage === "OFFER_SENT"
+              ? "Offer sent. Waiting for the student's reply."
+              : application.documentsVerified
+                ? "Offer accepted and documents verified. You or the placement cell can mark the student as joined."
+                : "Offer accepted. The placement cell is verifying the student's documents."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {stage === "OFFER_ACCEPTED" && application.documentsVerified && (
+              <Button
+                size="sm"
+                disabled={isPending}
+                onClick={() =>
+                  startTransition(async () => {
+                    try {
+                      await markJoinedAction(application.id);
+                      toast(`${name} marked as joined.`);
+                    } catch (err) {
+                      toast((err as Error).message, "error");
+                    }
+                  })
+                }
+              >
+                Mark as joined
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" disabled={isPending} onClick={() => setWithdrawing((w) => !w)}>
+              Withdraw offer
+            </Button>
+          </div>
+          {withdrawing && (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50/50 p-3">
+              <label className="text-xs text-muted block">
+                Why are you withdrawing this offer? The student and the placement cell will read this.
+                <textarea
+                  value={withdrawReason}
+                  onChange={(e) => setWithdrawReason(e.target.value)}
+                  rows={4}
+                  maxLength={1000}
+                  placeholder={"For example: the package was typed wrong, or the offer went to the wrong candidate.\nPress Enter to start a new line."}
+                  className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink"
+                />
+              </label>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={isPending || withdrawReason.trim().length < 5}
+                  onClick={() =>
+                    startTransition(async () => {
+                      try {
+                        await withdrawOfferAction(application.id, withdrawReason);
+                        toast("Offer withdrawn. The student and the placement cell were told.", "info");
+                        setWithdrawing(false);
+                        setWithdrawReason("");
+                      } catch (err) {
+                        toast((err as Error).message, "error");
+                      }
+                    })
+                  }
+                >
+                  Confirm withdrawal
+                </Button>
+                <Button size="sm" variant="ghost" disabled={isPending} onClick={() => setWithdrawing(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
       {stage === "JOINED" && <p className="mt-3 text-xs text-emerald-700">This candidate has joined your company.</p>}
       {stage === "WITHDRAWN" && <p className="mt-3 text-xs text-muted">The student withdrew this application.</p>}
     </div>
+  );
+}
+
+/** The offer form: a package on one line and a message box where Enter starts a new line. */
+function OfferForm({
+  title,
+  submitLabel,
+  busy,
+  defaults,
+  onSubmit,
+  onCancel,
+}: {
+  title: string;
+  submitLabel: string;
+  busy: boolean;
+  defaults?: { offerPackage: string; offerMessage: string };
+  onSubmit: (formData: FormData) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <form
+      action={(fd) => onSubmit(fd)}
+      className="mt-3 rounded-xl border border-border-soft bg-surface p-4 space-y-3"
+    >
+      <p className="text-sm font-medium text-ink">{title}</p>
+      <label className="block text-xs text-muted">
+        Package
+        <input
+          name="offerPackage"
+          required
+          maxLength={100}
+          defaultValue={defaults?.offerPackage}
+          placeholder="e.g. 12 LPA"
+          className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink"
+        />
+      </label>
+      <label className="block text-xs text-muted">
+        Message to the candidate (optional). Press Enter to start a new line.
+        <textarea
+          name="offerMessage"
+          rows={7}
+          maxLength={2000}
+          defaultValue={defaults?.offerMessage}
+          placeholder={"Dear candidate,\n\nWe are happy to offer you the role of ...\n\nJoining date: ...\nLocation: ...\n\nRegards,"}
+          className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink leading-relaxed"
+        />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? "Saving..." : submitLabel}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }

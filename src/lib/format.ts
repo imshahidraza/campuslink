@@ -12,3 +12,7 @@ export const fmtTime = (d: D) =>
 
 export const fmtDateTime = (d: D) =>
   new Date(d).toLocaleString(LOC, { timeZone: TZ, day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/** A plain calendar day such as "2026-11-08", shown the same everywhere regardless of timezone. */
+export const fmtDay = (ymd: string) =>
+  new Date(`${ymd}T12:00:00Z`).toLocaleDateString(LOC, { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });

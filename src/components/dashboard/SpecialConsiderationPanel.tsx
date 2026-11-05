@@ -138,7 +138,7 @@ export function SpecialConsiderationPanel({
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Optional note for the recruiter: why you're recommending them (e.g. strong portfolio despite CGPA)"
-            rows={2}
+            rows={4}
             className="w-full mt-2 rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:border-brand-300"
           />
           <Button onClick={handleAdd} disabled={isPending} size="sm" className="mt-2">
@@ -157,7 +157,7 @@ export function SpecialConsiderationPanel({
                   <Award className="h-3.5 w-3.5 text-amber-500 shrink-0" /> {r.name}{" "}
                   <span className="text-muted font-normal">· {r.rollNo}</span>
                 </p>
-                {r.note && <p className="text-xs text-muted mt-0.5">{r.note}</p>}
+                {r.note && <p className="text-xs text-muted mt-0.5 whitespace-pre-line">{r.note}</p>}
               </div>
               <button
                 onClick={() => handleRemove(r)}

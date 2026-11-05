@@ -108,7 +108,7 @@ export default async function JourneyPage() {
                     <Sparkles className="h-4 w-4 text-brand-600 shrink-0 mt-0.5" />
                     <div>
                       <p className="text-sm text-ink font-medium">Feedback to help you grow</p>
-                      <p className="text-sm text-muted mt-1">{app.feedbackNote}</p>
+                      <p className="text-sm text-muted mt-1 whitespace-pre-line">{app.feedbackNote}</p>
                     </div>
                   </div>
                 )}
@@ -118,6 +118,19 @@ export default async function JourneyPage() {
                     <span className="font-medium">Offer package: </span>
                     {app.offerPackage}
                   </p>
+                )}
+                {app.offerMessage && ["OFFER_SENT", "OFFER_ACCEPTED", "JOINED", "OFFER_DECLINED"].includes(app.stage) && (
+                  <div className="mt-3 rounded-xl bg-surface border border-border-soft p-4">
+                    <p className="text-xs text-muted mb-1">Message from {app.drive.companyName}</p>
+                    <p className="text-sm text-ink whitespace-pre-line leading-relaxed">{app.offerMessage}</p>
+                  </div>
+                )}
+                {app.stage === "SELECTED" && app.offerWithdrawnNote && (
+                  <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4">
+                    <p className="text-sm text-ink font-medium">{app.drive.companyName} withdrew the offer</p>
+                    <p className="text-sm text-muted mt-1 whitespace-pre-line leading-relaxed">{app.offerWithdrawnNote}</p>
+                    <p className="text-xs text-muted mt-2">You are still selected for this drive. The company may send a corrected offer.</p>
+                  </div>
                 )}
 
                 {app.stage === "OFFER_SENT" && <OfferResponseButtons applicationId={app.id} docsEmail={docsEmail} />}

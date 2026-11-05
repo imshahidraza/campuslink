@@ -1,7 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
-import { sendOfferToStudentAction, verifyDocumentsAction, markJoinedAction } from "@/lib/actions/offers";
+import { useState, useTransition } from "react";
+import { sendOfferToStudentAction, verifyDocumentsAction, markJoinedAction, undoJoinedAction } from "@/lib/actions/offers";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Card";
 import { useToast } from "@/components/ui/Toast";
@@ -11,6 +11,8 @@ interface OfferApplication {
   id: string;
   stage: string;
   offerPackage: string | null;
+  offerMessage?: string | null;
+  joinedByRole?: string | null;
   documentsVerified: boolean;
   joined: boolean;
   student: { rollNo: string; user: { name: string } };
@@ -28,6 +30,7 @@ const stageTone: Record<string, "neutral" | "brand" | "success" | "warning" | "d
 export function OfferRow({ application }: { application: OfferApplication }) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
+  const [confirmingUndo, setConfirmingUndo] = useState(false);
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-soft py-3 last:border-0">
@@ -36,6 +39,17 @@ export function OfferRow({ application }: { application: OfferApplication }) {
         <p className="text-xs text-muted">
           {application.drive.jobRole} · {application.drive.companyName}{application.offerPackage ? ` · ${application.offerPackage}` : ""}
         </p>
+        {application.offerMessage && (
+          <details className="mt-1">
+            <summary className="text-xs text-brand-500 cursor-pointer">Message to the student</summary>
+            <p className="mt-1 text-xs text-muted whitespace-pre-line">{application.offerMessage}</p>
+          </details>
+        )}
+        {application.stage === "JOINED" && application.joinedByRole && (
+          <p className="text-xs text-muted mt-0.5">
+            Confirmed by {application.joinedByRole === "TPO" ? "the placement cell" : "the recruiter"}
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={stageTone[application.stage] || "neutral"}>{journeyLabel(application.stage, application.documentsVerified)}</Badge>
@@ -100,6 +114,38 @@ export function OfferRow({ application }: { application: OfferApplication }) {
           >
             Mark as joined
           </Button>
+        )}
+
+        {application.stage === "JOINED" && !confirmingUndo && (
+          <Button size="sm" variant="ghost" disabled={isPending} onClick={() => setConfirmingUndo(true)}>
+            Undo joined
+          </Button>
+        )}
+        {application.stage === "JOINED" && confirmingUndo && (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">Move back to documents verified?</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={isPending}
+              onClick={() =>
+                startTransition(async () => {
+                  try {
+                    await undoJoinedAction(application.id);
+                    toast("Moved back to documents verified.", "info");
+                    setConfirmingUndo(false);
+                  } catch (err) {
+                    toast((err as Error).message, "error");
+                  }
+                })
+              }
+            >
+              Yes, undo
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmingUndo(false)}>
+              Keep joined
+            </Button>
+          </span>
         )}
       </div>
     </div>

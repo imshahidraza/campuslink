@@ -135,6 +135,12 @@ export interface ConflictCheckResult {
   notes: string[];
 }
 
+/** Case and spacing do not matter: "Panel A", "PANEL  A" and "panel a" are the same panel. */
+function sameText(a: string, b: string) {
+  const clean = (v: string) => v.trim().replace(/\s+/g, " ").toLowerCase();
+  return clean(a) === clean(b);
+}
+
 function overlaps(aStart: Date, aMins: number, bStart: Date, bMins: number): boolean {
   const aEnd = aStart.getTime() + aMins * 60_000;
   const bEnd = bStart.getTime() + bMins * 60_000;
@@ -159,10 +165,10 @@ export function checkSchedulingConflicts(
     if (slot.studentId === candidate.studentId) {
       notes.push(`Student already has an overlapping interview at ${slot.scheduledAt.toLocaleString()}`);
     }
-    if (candidate.venue && slot.venue && candidate.venue === slot.venue) {
+    if (candidate.venue && slot.venue && sameText(candidate.venue, slot.venue)) {
       notes.push(`Venue "${candidate.venue}" is already booked at that time`);
     }
-    if (candidate.panel && slot.panel && candidate.panel === slot.panel) {
+    if (candidate.panel && slot.panel && sameText(candidate.panel, slot.panel)) {
       notes.push(`Panel "${candidate.panel}" is already booked at that time`);
     }
   }

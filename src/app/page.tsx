@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LinkButton } from "@/components/ui/Button";
+import { ScrollMarquee } from "@/components/landing/ScrollMarquee";
 import { ParallaxController } from "@/components/landing/ParallaxController";
 import { ScrollReveal } from "@/components/ui/ScrollReveal";
 import { CustomCursor } from "@/components/landing/CustomCursor";
@@ -214,9 +215,9 @@ export default function LandingPage() {
       {/* PIPELINE */}
       <section id="pipeline" className="py-28 bg-white border-t border-border-soft relative overflow-hidden">
         {/* giant outlined text drifting sideways as you scroll */}
-        <div data-parallax data-x="0.35" className="absolute top-6 left-0 whitespace-nowrap select-none pointer-events-none">
-          <span className="text-outline font-serif italic text-[9rem] leading-none">Campus to Corporate to Campus to Corporate</span>
-        </div>
+        <ScrollMarquee className="absolute top-6 left-0 whitespace-nowrap select-none pointer-events-none">
+          <span className="text-outline font-serif italic text-[5rem] sm:text-[9rem] leading-none">Campus to Corporate to Campus to Corporate</span>
+        </ScrollMarquee>
         <div className="relative mx-auto max-w-7xl px-6 lg:px-8 pt-16">
           <p className="text-brand-950 text-sm mb-3 font-semibold inline-block border-b-2 border-accent-lime pb-0.5">The core pipeline</p>
           <h2 className="text-3xl sm:text-4xl font-semibold text-ink max-w-xl">

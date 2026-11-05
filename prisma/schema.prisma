@@ -98,6 +98,12 @@ enum ApplicationStage {
   WITHDRAWN // the student withdrew their own application
 }
 
+enum ScheduleStatus {
+  WAITING_TPO // the recruiter sent preferred dates; the placement cell has to answer
+  WAITING_RECRUITER // the placement cell suggested other dates; the recruiter has to answer
+  CONFIRMED // both sides agreed
+}
+
 enum RecruiterStatus {
   PENDING
   APPROVED
@@ -236,6 +242,7 @@ model Drive {
 
   applications Application[]
   interviews   Interview[]
+  scheduleRequest ScheduleRequest?
   matches      DriveMatch[]
 
   createdAt DateTime @default(now())
@@ -295,11 +302,15 @@ model Application {
   // Offer pipeline — stage (above) is the single source of truth for where
   // things stand; these are just the "when" for each step, for display.
   offerPackage      String? // set once, by the recruiter, when they request the offer
+  offerMessage      String? // the recruiter's multi-line message to the candidate
+  offerWithdrawnAt  DateTime?
+  offerWithdrawnNote String? // why the recruiter withdrew the offer, shown to the student
   offerRequestedAt  DateTime?
   offerSentAt       DateTime?
   offerRespondedAt  DateTime?
   documentsVerified Boolean   @default(false)
   joined            Boolean   @default(false)
+  joinedByRole      Role?     // who confirmed the joining (the placement cell or the recruiter)
 
   interviews Interview[]
 
@@ -388,4 +399,36 @@ model Resume {
   size       Int
   data       Bytes
   uploadedAt DateTime @default(now())
+}
+
+/// One per drive: the date, time window, venue and panels the recruiter and the placement cell agree on.
+/// Interviews can only be booked inside the last agreed window.
+model ScheduleRequest {
+  id      String @id @default(cuid())
+  driveId String @unique
+  drive   Drive  @relation(fields: [driveId], references: [id])
+
+  status ScheduleStatus @default(WAITING_TPO)
+
+  // The proposal that is on the table right now.
+  dates          String[] @default([]) // yyyy-mm-dd, up to 3 options
+  startTime      String // HH:mm
+  endTime        String // HH:mm
+  panelCount     Int      @default(1)
+  venue          String?
+  panels         String? // one per line: "PANEL A @ ROOM 101"
+  note           String?
+  proposedByRole Role
+
+  // The last agreed window. Bookings must fit inside it.
+  agreedDates  String[] @default([])
+  agreedStart  String?
+  agreedEnd    String?
+  agreedVenue  String?
+  agreedPanels String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
 }

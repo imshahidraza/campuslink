@@ -10,7 +10,6 @@ import { Award } from "lucide-react";
 import Link from "next/link";
 import { RejectWithFeedback } from "./RejectWithFeedback";
 import { ViewResumeLink } from "./ViewResumeLink";
-import { ScheduleInterviewForm } from "./ScheduleInterviewForm";
 
 interface Props {
   application: {
@@ -46,7 +45,6 @@ export function ApplicationReviewRow({ application }: Props) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
-  const [scheduling, setScheduling] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
   function confirmReject(note: string) {
@@ -132,9 +130,6 @@ export function ApplicationReviewRow({ application }: Props) {
           <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setStage("SHORTLISTED", "shortlisted")}>
             Shortlist
           </Button>
-          <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setScheduling((s) => !s)}>
-            Schedule interview
-          </Button>
           <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setStage("SELECTED", "marked as selected")}>
             Select (override)
           </Button>
@@ -163,13 +158,6 @@ export function ApplicationReviewRow({ application }: Props) {
         </p>
       )}
 
-      {scheduling && (
-        <ScheduleInterviewForm
-          applicationId={application.id}
-          driveId={application.driveId}
-          onDone={() => setScheduling(false)}
-        />
-      )}
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { LinkButton } from "@/components/ui/Button";
 import { DriveStatusControl, BulkMatchButton } from "@/components/dashboard/DriveDetailControls";
 import { RecruiterCandidateRow } from "@/components/dashboard/RecruiterCandidateRow";
 import { AutoScheduleForm } from "@/components/dashboard/AutoScheduleForm";
+import { ScheduleRequestCard } from "@/components/dashboard/ScheduleRequestCard";
+import { getAgreedWindow } from "@/lib/schedule";
 import { stageLabel } from "@/lib/utils";
 import { Pencil, Award } from "lucide-react";
 import { fmtDate } from "@/lib/format";
@@ -33,6 +35,10 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
   const shortlisted = active.filter((a) => a.stage === "SHORTLISTED").length;
   const cell = await placementCellLabel();
   const approved = recruiter.status === "APPROVED";
+  const [scheduleRequest, window] = await Promise.all([
+    prisma.scheduleRequest.findUnique({ where: { driveId: drive.id } }),
+    getAgreedWindow(drive.id),
+  ]);
 
   return (
     <div>
@@ -95,7 +101,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
                   worth a look based on their profile. The decision is yours.
                 </p>
                 {recommended.map((app) => (
-                  <RecruiterCandidateRow key={app.id} application={app} />
+                  <RecruiterCandidateRow key={app.id} application={app} window={window} />
                 ))}
               </CardContent>
             </Card>
@@ -116,7 +122,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
                 </p>
               )}
               {others.map((app) => (
-                <RecruiterCandidateRow key={app.id} application={app} />
+                <RecruiterCandidateRow key={app.id} application={app} window={window} />
               ))}
               {withdrawn > 0 && (
                 <p className="text-xs text-muted mt-3">
@@ -129,20 +135,46 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
           {approved && (
             <Card>
               <CardHeader>
-                <CardTitle>Schedule interviews for everyone shortlisted</CardTitle>
+                <CardTitle>Interview dates</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3">
+                <ScheduleRequestCard
+                  driveId={drive.id}
+                  request={
+                    scheduleRequest
+                      ? {
+                          status: scheduleRequest.status,
+                          dates: scheduleRequest.dates,
+                          startTime: scheduleRequest.startTime,
+                          endTime: scheduleRequest.endTime,
+                          panelCount: scheduleRequest.panelCount,
+                          venue: scheduleRequest.venue,
+                          panels: scheduleRequest.panels,
+                          note: scheduleRequest.note,
+                          agreedDates: scheduleRequest.agreedDates,
+                          agreedStart: scheduleRequest.agreedStart,
+                          agreedEnd: scheduleRequest.agreedEnd,
+                          agreedVenue: scheduleRequest.agreedVenue,
+                          agreedPanels: scheduleRequest.agreedPanels,
+                        }
+                      : null
+                  }
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {approved && window && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Schedule everyone shortlisted</CardTitle>
               </CardHeader>
               <CardContent className="pt-3">
                 <p className="text-xs text-muted mb-4 leading-relaxed">
-                  Shortlist candidates first. You can also schedule one candidate at a time from their row above.
-                  Clashes with a student&apos;s other interviews are checked for you.
+                  Shortlist candidates first. You can also book one candidate at a time from their row above. Clashes
+                  with a student&apos;s other interviews are checked for you.
                 </p>
-                <AutoScheduleForm
-                  drives={
-                    shortlisted > 0
-                      ? [{ id: drive.id, label: drive.jobRole, shortlisted }]
-                      : []
-                  }
-                />
+                <AutoScheduleForm driveId={drive.id} shortlisted={shortlisted} window={window} />
               </CardContent>
             </Card>
           )}

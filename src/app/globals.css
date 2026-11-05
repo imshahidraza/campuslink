@@ -115,7 +115,7 @@ body {
 }
 .text-outline {
   color: transparent;
-  -webkit-text-stroke: 1.5px rgba(198, 244, 50, 0.45);
+  -webkit-text-stroke: 1.5px #0b0b0c;
 }
 /* Phone scroll-reveal (driven by ScrollReveal.tsx; only phones/touch devices get these classes) */
 .reveal-pre {
@@ -243,4 +243,16 @@ body {
   .clink-loader .ring { animation-duration: 3s; }
   .skeleton, .nav-progress, .cta-pulse { animation: none; }
   .nav-progress { transform: scaleX(0.6); }
+}
+
+/* Hide the browser's own "show password" icon (Edge and some Chrome versions) so only ours shows. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-contacts-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
 }

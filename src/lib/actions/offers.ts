@@ -4,10 +4,12 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { checkSchedulingConflicts, OFFER_PIPELINE_STAGES } from "@/lib/rules";
-import { assertCanManageDrive, requireApprovedRecruiter } from "@/lib/access";
+import { requireApprovedRecruiter } from "@/lib/access";
 import { getDocumentsEmail } from "@/lib/college";
 import { refreshPlacementStatus } from "@/lib/placement";
 import { fmtDateTime } from "@/lib/format";
+import { normalizeSlotName } from "@/lib/normalize";
+import { getAgreedWindow, TIME_RE, toMinutes } from "@/lib/schedule";
 
 async function requireTpo() {
   const session = await getSession();
@@ -16,45 +18,55 @@ async function requireTpo() {
 }
 
 /**
- * Schedules one interview. The placement cell, or the recruiter who owns the drive, can do this.
+ * Books one interview for one candidate. Only the recruiter who owns the drive can do this, and only inside
+ * the dates, time window and panels that they and the placement cell agreed on (see scheduleRequest.ts).
  * If the slot clashes (same student, panel or venue), nothing is saved and the clash is returned so the
- * person can pick another time. Only the placement cell can knowingly override a clash: sending
- * `override=1` (with an optional reason) saves it anyway, marked as a deliberate override.
+ * recruiter can pick another time.
  */
 export async function scheduleInterviewAction(formData: FormData) {
   const session = await getSession();
-  assertAnyRole(session, ["TPO", "RECRUITER"]);
+  assertRole(session, "RECRUITER");
+  const recruiter = await requireApprovedRecruiter(session.userId);
 
   const applicationId = String(formData.get("applicationId"));
   const driveId = String(formData.get("driveId"));
   const stage = String(formData.get("stage") || "Interview").trim().slice(0, 60) || "Interview";
-  const scheduledAt = new Date(String(formData.get("scheduledAt")));
-  if (Number.isNaN(scheduledAt.getTime())) throw new Error("Please choose a valid date and time.");
+  const date = String(formData.get("date") || "");
+  const time = String(formData.get("time") || "");
   const durationMins = Math.min(240, Math.max(10, Number(formData.get("durationMins")) || 30));
-  const venue = String(formData.get("venue") || "").trim() || null;
-  const panel = String(formData.get("panel") || "").trim() || null;
-  const override = String(formData.get("override") || "") === "1";
-  const overrideReason = String(formData.get("overrideReason") || "").trim().slice(0, 300) || null;
+  const panelName = normalizeSlotName(String(formData.get("panel") || ""));
 
   const application = await prisma.application.findUniqueOrThrow({
     where: { id: applicationId },
     include: { drive: true, student: { include: { user: { select: { name: true } } } } },
   });
-  await assertCanManageDrive(session, application.drive.recruiterId);
+  if (application.drive.recruiterId !== recruiter.id) throw new Error("You can only schedule for your own drives.");
+  if (application.driveId !== driveId) throw new Error("That candidate doesn't belong to this drive.");
 
-  if (override && session.role !== "TPO") {
-    throw new Error("Only the placement cell can schedule over a clash. Please choose another time.");
-  }
   if (application.stage === "WITHDRAWN" || application.stage === "REJECTED") {
     throw new Error("This candidate is no longer in the process, so an interview can't be scheduled.");
   }
   if ((OFFER_PIPELINE_STAGES as readonly string[]).includes(application.stage)) {
     throw new Error("This candidate is already in the offer process, so an interview can't be scheduled.");
   }
-  if (session.role === "RECRUITER" && !["SHORTLISTED", "INTERVIEW"].includes(application.stage)) {
+  if (!["SHORTLISTED", "INTERVIEW"].includes(application.stage)) {
     throw new Error("Shortlist this candidate before scheduling an interview.");
   }
-  if (application.driveId !== driveId) throw new Error("That candidate doesn't belong to this drive.");
+
+  const window = await getAgreedWindow(driveId);
+  if (!window) throw new Error("Interview dates are not confirmed yet. Ask the placement cell to confirm them first.");
+  if (!window.dates.includes(date)) throw new Error("Choose one of the confirmed interview dates.");
+  if (!TIME_RE.test(time)) throw new Error("Choose a valid time.");
+  if (toMinutes(time) < toMinutes(window.start) || toMinutes(time) + durationMins > toMinutes(window.end)) {
+    throw new Error(`The interview must fit between ${window.start} and ${window.end}.`);
+  }
+  const chosenPanel = window.panels.find((p) => p.name === panelName);
+  if (!chosenPanel) throw new Error("Choose one of the confirmed panels.");
+  const panel = chosenPanel.name;
+  const venue = chosenPanel.venue; // the panel's own room, used for the clash check
+  const shownVenue = venue ?? window.venue; // what is saved and shown to the student
+  const scheduledAt = new Date(`${date}T${time}:00`);
+  if (Number.isNaN(scheduledAt.getTime())) throw new Error("Please choose a valid date and time.");
 
   const dayStart = new Date(scheduledAt);
   dayStart.setHours(0, 0, 0, 0);
@@ -78,9 +90,9 @@ export async function scheduleInterviewAction(formData: FormData) {
     }))
   );
 
-  // Clash and no explicit override yet: save nothing, hand the details back for the person to decide.
-  if (conflict.hasConflict && !override) {
-    return { saved: false as const, conflict, canOverride: session.role === "TPO" };
+  // A clash: save nothing and hand the details back so the recruiter can choose another time.
+  if (conflict.hasConflict) {
+    return { saved: false as const, conflict };
   }
 
   const interview = await prisma.interview.create({
@@ -90,13 +102,13 @@ export async function scheduleInterviewAction(formData: FormData) {
       stage,
       scheduledAt,
       durationMins,
-      venue,
+      venue: shownVenue,
       panel,
-      hasConflict: conflict.hasConflict,
-      conflictNote: conflict.notes.join("; ") || null,
-      overridden: conflict.hasConflict,
-      overrideReason: conflict.hasConflict ? overrideReason : null,
-      scheduledByRole: session.role,
+      hasConflict: false,
+      conflictNote: null,
+      overridden: false,
+      overrideReason: null,
+      scheduledByRole: "RECRUITER",
     },
   });
 
@@ -108,27 +120,16 @@ export async function scheduleInterviewAction(formData: FormData) {
       studentId: application.studentId,
       type: "INTERVIEW_SCHEDULE",
       title: `Interview scheduled: ${stage}`,
-      message: `Your ${stage} for ${application.drive.jobRole} at ${application.drive.companyName} is on ${fmtDateTime(scheduledAt)}${venue ? ` at ${venue}` : ""}.`,
+      message: `Your ${stage} for ${application.drive.jobRole} at ${application.drive.companyName} is on ${fmtDateTime(scheduledAt)}${shownVenue ? ` at ${shownVenue}` : ""} (${panel}).`,
     },
   });
-  if (session.role === "RECRUITER") {
-    await prisma.tpoNotification.create({
-      data: {
-        type: "INTERVIEW_SCHEDULE",
-        title: "Interview scheduled by a recruiter",
-        message: `${application.drive.companyName} scheduled ${application.student.rollNo} (${application.student.user.name}) for ${stage} on ${fmtDateTime(scheduledAt)}.`,
-      },
-    });
-  } else {
-    await prisma.recruiterNotification.create({
-      data: {
-        recruiterId: application.drive.recruiterId,
-        type: "INTERVIEW_SCHEDULE",
-        title: "Interview scheduled by the placement cell",
-        message: `${application.student.rollNo} (${application.student.user.name}) has a ${stage} on ${fmtDateTime(scheduledAt)}${venue ? ` at ${venue}` : ""}.`,
-      },
-    });
-  }
+  await prisma.tpoNotification.create({
+    data: {
+      type: "INTERVIEW_SCHEDULE",
+      title: "Interview scheduled by a recruiter",
+      message: `${application.drive.companyName} scheduled ${application.student.rollNo} (${application.student.user.name}) for ${stage} on ${fmtDateTime(scheduledAt)}.`,
+    },
+  });
 
   revalidatePath("/tpo/scheduling");
   revalidatePath("/tpo/notifications");
@@ -137,7 +138,7 @@ export async function scheduleInterviewAction(formData: FormData) {
   revalidatePath(`/recruiter/drives/${driveId}`);
   revalidatePath("/student/journey");
   revalidatePath("/student/notifications");
-  return { saved: true as const, interview, conflict, canOverride: session.role === "TPO" };
+  return { saved: true as const, interview };
 }
 
 /* ======================= Offer pipeline =======================
@@ -147,13 +148,26 @@ export async function scheduleInterviewAction(formData: FormData) {
  * unplaced overall, since they may still be active on other drives.
  * ================================================================= */
 
+/** The offer message keeps its line breaks, so the recruiter can write it in paragraphs. */
+function readOfferMessage(formData: FormData): string | null {
+  const raw = String(formData.get("offerMessage") || "").replace(/\r\n/g, "\n").trim().slice(0, 2000);
+  return raw || null;
+}
+
+function readReason(formData: FormData | string, what: string): string {
+  const raw = (typeof formData === "string" ? formData : String(formData.get("reason") || "")).replace(/\r\n/g, "\n").trim().slice(0, 1000);
+  if (raw.length < 5) throw new Error(`Please write a short reason for ${what}.`);
+  return raw;
+}
+
 /** Recruiter requests an offer for a candidate they've already marked Selected. Package is fixed here — the TPO forwards it as-is, doesn't edit it. */
 export async function requestOfferAction(applicationId: string, formData: FormData) {
   const session = await getSession();
   assertRole(session, "RECRUITER");
 
-  const offerPackage = String(formData.get("offerPackage") || "").trim();
+  const offerPackage = String(formData.get("offerPackage") || "").trim().slice(0, 100);
   if (!offerPackage) throw new Error("Please enter the package you're offering.");
+  const offerMessage = readOfferMessage(formData);
 
   const recruiter = await requireApprovedRecruiter(session.userId);
   const application = await prisma.application.findUniqueOrThrow({
@@ -170,7 +184,15 @@ export async function requestOfferAction(applicationId: string, formData: FormDa
 
   const updated = await prisma.application.update({
     where: { id: applicationId },
-    data: { stage: "OFFER_REQUESTED", offerPackage, offerRequestedAt: new Date() },
+    data: {
+      stage: "OFFER_REQUESTED",
+      offerPackage,
+      offerMessage,
+      offerRequestedAt: new Date(),
+      // A fresh request replaces any earlier withdrawal.
+      offerWithdrawnAt: null,
+      offerWithdrawnNote: null,
+    },
   });
 
   await prisma.tpoNotification.create({
@@ -212,7 +234,7 @@ export async function sendOfferToStudentAction(applicationId: string) {
       studentId: application.studentId,
       type: "OFFER_UPDATE",
       title: `You've received an offer from ${application.drive.companyName}!`,
-      message: `Package: ${application.offerPackage}. Open your Placement Journey to accept or decline.`,
+      message: `Package: ${application.offerPackage}. Open your Placement Journey to read the message from the company and to accept or decline.`,
     },
   });
 
@@ -317,20 +339,30 @@ export async function verifyDocumentsAction(applicationId: string) {
   return updated;
 }
 
-/** TPO marks the student as joined, the final step. Only available after documents are verified. */
+/**
+ * Marks the student as joined, the final step. Only available after the placement cell verified the documents.
+ * The placement cell or the recruiter who owns the drive can do it, and whoever presses first sets it.
+ */
 export async function markJoinedAction(applicationId: string) {
-  await requireTpo();
+  const session = await getSession();
+  assertAnyRole(session, ["TPO", "RECRUITER"]);
   const application = await prisma.application.findUniqueOrThrow({
     where: { id: applicationId },
     include: { drive: true, student: { include: { user: { select: { name: true } } } } },
   });
-  if (!application.documentsVerified) {
-    throw new Error("Verify the documents before marking this student as joined.");
+  if (session.role === "RECRUITER") {
+    const recruiter = await requireApprovedRecruiter(session.userId);
+    if (application.drive.recruiterId !== recruiter.id) throw new Error("You can only do this for your own drives.");
   }
   if (application.stage === "JOINED") return application;
+  if (application.stage !== "OFFER_ACCEPTED") throw new Error("The student has to accept the offer first.");
+  if (!application.documentsVerified) {
+    throw new Error("The placement cell has to verify the documents before this student can be marked as joined.");
+  }
+  const by = session.role === "TPO" ? "The placement cell" : application.drive.companyName;
   const updated = await prisma.application.update({
     where: { id: applicationId },
-    data: { stage: "JOINED", joined: true },
+    data: { stage: "JOINED", joined: true, joinedByRole: session.role },
   });
   await refreshPlacementStatus(application.studentId);
   await Promise.all([
@@ -339,25 +371,174 @@ export async function markJoinedAction(applicationId: string) {
         studentId: application.studentId,
         type: "OFFER_UPDATE",
         title: `Welcome to ${application.drive.companyName}!`,
-        message: "You are now marked as joined. Congratulations on your placement.",
+        message: `${by} confirmed that you have joined. Congratulations on your placement.`,
+      },
+    }),
+    session.role === "TPO"
+      ? prisma.recruiterNotification.create({
+          data: {
+            recruiterId: application.drive.recruiterId,
+            type: "OFFER_UPDATE",
+            title: "A candidate has joined",
+            message: `${application.student.rollNo} (${application.student.user.name}) is now marked as joined for ${application.drive.jobRole}.`,
+          },
+        })
+      : prisma.tpoNotification.create({
+          data: {
+            type: "OFFER_UPDATE",
+            title: "A recruiter confirmed a joining",
+            message: `${application.drive.companyName} confirmed that ${application.student.rollNo} (${application.student.user.name}) joined as ${application.drive.jobRole}.`,
+          },
+        }),
+  ]);
+
+  revalidateOfferPages(application.driveId);
+  return updated;
+}
+
+/** Placement cell only: undo a joining that was marked by mistake. The stage goes back to "Documents verified". */
+export async function undoJoinedAction(applicationId: string) {
+  await requireTpo();
+  const application = await prisma.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    include: { drive: true, student: { include: { user: { select: { name: true } } } } },
+  });
+  if (application.stage !== "JOINED") throw new Error("This student is not marked as joined.");
+  await prisma.application.update({
+    where: { id: applicationId },
+    data: { stage: "OFFER_ACCEPTED", joined: false, joinedByRole: null },
+  });
+  await refreshPlacementStatus(application.studentId);
+  await Promise.all([
+    prisma.notification.create({
+      data: {
+        studentId: application.studentId,
+        type: "OFFER_UPDATE",
+        title: "Joining status corrected",
+        message: `Your joining for ${application.drive.companyName} was marked by mistake and has been corrected. You will be marked as joined once it is confirmed again.`,
       },
     }),
     prisma.recruiterNotification.create({
       data: {
         recruiterId: application.drive.recruiterId,
         type: "OFFER_UPDATE",
-        title: "A candidate has joined",
-        message: `${application.student.rollNo} (${application.student.user.name}) is now marked as joined for ${application.drive.jobRole}.`,
+        title: "Joining status corrected",
+        message: `${application.student.rollNo} (${application.student.user.name}) was moved back from joined to documents verified for ${application.drive.jobRole}.`,
       },
     }),
   ]);
+  revalidateOfferPages(application.driveId);
+}
 
+function revalidateOfferPages(driveId: string) {
   revalidatePath("/tpo/offers");
+  revalidatePath("/tpo");
+  revalidatePath("/tpo/notifications");
   revalidatePath("/student/journey");
   revalidatePath("/student/notifications");
   revalidatePath("/recruiter/notifications");
-  revalidatePath(`/recruiter/drives/${application.driveId}`);
-  return updated;
+  revalidatePath(`/recruiter/drives/${driveId}`);
+  revalidatePath(`/tpo/drives/${driveId}`);
+}
+
+/** Recruiter fixes the package or message of an offer request the placement cell has not forwarded yet. */
+export async function editOfferRequestAction(applicationId: string, formData: FormData) {
+  const session = await getSession();
+  assertRole(session, "RECRUITER");
+  const recruiter = await requireApprovedRecruiter(session.userId);
+  const offerPackage = String(formData.get("offerPackage") || "").trim().slice(0, 100);
+  if (!offerPackage) throw new Error("Please enter the package you're offering.");
+  const offerMessage = readOfferMessage(formData);
+
+  const application = await prisma.application.findUniqueOrThrow({ where: { id: applicationId }, include: { drive: true } });
+  if (application.drive.recruiterId !== recruiter.id) throw new Error("You can only do this for your own drives.");
+  if (application.stage !== "OFFER_REQUESTED") {
+    throw new Error("This request has already been forwarded, so it can't be edited. You can withdraw the offer instead.");
+  }
+  await prisma.application.update({ where: { id: applicationId }, data: { offerPackage, offerMessage } });
+  revalidateOfferPages(application.driveId);
+}
+
+/** Recruiter cancels an offer request the placement cell has not forwarded yet. The candidate goes back to Selected. */
+export async function cancelOfferRequestAction(applicationId: string) {
+  const session = await getSession();
+  assertRole(session, "RECRUITER");
+  const recruiter = await requireApprovedRecruiter(session.userId);
+  const application = await prisma.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    include: { drive: true, student: { include: { user: { select: { name: true } } } } },
+  });
+  if (application.drive.recruiterId !== recruiter.id) throw new Error("You can only do this for your own drives.");
+  if (application.stage !== "OFFER_REQUESTED") throw new Error("This request has already been forwarded. Withdraw the offer instead.");
+  await prisma.application.update({
+    where: { id: applicationId },
+    data: { stage: "SELECTED", offerPackage: null, offerMessage: null, offerRequestedAt: null },
+  });
+  await refreshPlacementStatus(application.studentId);
+  await prisma.tpoNotification.create({
+    data: {
+      type: "OFFER_UPDATE",
+      title: "Offer request cancelled",
+      message: `${application.drive.companyName} cancelled the offer request for ${application.student.rollNo} (${application.student.user.name}).`,
+    },
+  });
+  revalidateOfferPages(application.driveId);
+}
+
+/**
+ * Recruiter withdraws an offer that was already sent, or accepted but not yet joined. A written reason is
+ * required and the student sees it. The candidate goes back to Selected, so the recruiter can send a corrected
+ * offer, or mark them Not selected if it was the wrong person.
+ */
+export async function withdrawOfferAction(applicationId: string, reason: string) {
+  const session = await getSession();
+  assertRole(session, "RECRUITER");
+  const recruiter = await requireApprovedRecruiter(session.userId);
+  const note = readReason(reason, "withdrawing this offer");
+
+  const application = await prisma.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    include: { drive: true, student: { include: { user: { select: { name: true } } } } },
+  });
+  if (application.drive.recruiterId !== recruiter.id) throw new Error("You can only do this for your own drives.");
+  if (application.stage !== "OFFER_SENT" && application.stage !== "OFFER_ACCEPTED") {
+    throw new Error("Only an offer that was sent or accepted can be withdrawn. A joined candidate can't be withdrawn.");
+  }
+  const wasAccepted = application.stage === "OFFER_ACCEPTED";
+
+  await prisma.application.update({
+    where: { id: applicationId },
+    data: {
+      stage: "SELECTED",
+      offerPackage: null,
+      offerMessage: null,
+      offerSentAt: null,
+      offerRespondedAt: null,
+      documentsVerified: false,
+      offerWithdrawnAt: new Date(),
+      offerWithdrawnNote: note,
+    },
+  });
+  await refreshPlacementStatus(application.studentId);
+
+  await Promise.all([
+    prisma.notification.create({
+      data: {
+        studentId: application.studentId,
+        type: "OFFER_UPDATE",
+        title: `${application.drive.companyName} withdrew the offer`,
+        message: `Reason from the company: ${note}`,
+      },
+    }),
+    prisma.tpoNotification.create({
+      data: {
+        type: "OFFER_UPDATE",
+        title: wasAccepted ? "Offer withdrawn after the student accepted" : "Offer withdrawn",
+        message: `${application.drive.companyName} withdrew the offer for ${application.student.rollNo} (${application.student.user.name}), ${application.drive.jobRole}. Reason: ${note}`,
+      },
+    }),
+  ]);
+  revalidateOfferPages(application.driveId);
 }
 
 export async function markTpoNotificationReadAction(notificationId: string) {

@@ -25,7 +25,7 @@ export default async function NotificationsPage() {
             <CardContent className="pt-5 flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-ink">{n.title}</p>
-                <p className="text-sm text-muted mt-1">{n.message}</p>
+                <p className="text-sm text-muted mt-1 whitespace-pre-line">{n.message}</p>
                 <p className="text-[11px] text-muted mt-2">{fmtDateTime(n.createdAt)}</p>
               </div>
               {!n.read && <MarkReadButton onMarkRead={markNotificationReadAction.bind(null, n.id)} />}

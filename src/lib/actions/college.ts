@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole } from "@/lib/auth";
-import { splitRow, detectHeaderMapping, detectHeaderMappingWithOptional } from "@/lib/csvParse";
+import { splitRow, detectHeaderMappingWithOptional } from "@/lib/csvParse";
 import { normalizeRollNo, tidyName } from "@/lib/normalize";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -15,19 +15,11 @@ async function requireTpo() {
 }
 
 /**
- * Programs are free text (not a locked list) — a TPO can type anything
- * ("B.Tech", "Bachelor of Technology", "Diploma in..."). To stop "B.Tech"
- * and "b.tech" from becoming two different programs, we check what's
- * already in the catalog case-insensitively and reuse that exact spelling;
- * the first time a program is typed, its casing becomes the canonical one.
+ * Programs are free text, but they are always saved in capitals ("mca", "Mca" and "MCA" all become
+ * "MCA"), so the same program can never appear twice and the list always looks consistent.
  */
 async function canonicalizeProgram(typed: string): Promise<string> {
-  const trimmed = typed.trim();
-  const existing = await prisma.specialization.findFirst({
-    where: { program: { equals: trimmed, mode: "insensitive" } },
-    orderBy: { createdAt: "asc" },
-  });
-  return existing?.program ?? trimmed;
+  return typed.trim().replace(/\s+/g, " ").toUpperCase();
 }
 
 export async function addSpecializationAction(formData: FormData) {
@@ -61,16 +53,6 @@ export async function deleteSpecializationAction(id: string) {
   revalidatePath("/tpo/college-setup");
   revalidatePath("/tpo");
   revalidatePath("/student/profile");
-}
-
-/** Lists every distinct program currently in the catalog, for the "known programs" datalist. */
-export async function listKnownPrograms(): Promise<string[]> {
-  const rows = await prisma.specialization.findMany({
-    select: { program: true },
-    distinct: ["program"],
-    orderBy: { program: "asc" },
-  });
-  return rows.map((r) => r.program);
 }
 
 type RosterField = "rollNo" | "name" | "program" | "branch" | "cgpa" | "backlogs" | "graduationYear";
@@ -227,80 +209,6 @@ export async function deletePendingStudentAction(id: string) {
   await requireTpo();
   await prisma.pendingStudent.delete({ where: { id } });
   revalidatePath("/tpo/students");
-}
-
-/* ---------- Assessment scores (aptitude / reasoning / verbal / communication) ---------- */
-
-type ScoreField = "rollNo" | "aptitude" | "reasoning" | "verbal" | "communication";
-
-const SCORE_SYNONYMS: Record<ScoreField, string[]> = {
-  rollNo: ["roll no", "rollno", "roll number", "registration no", "reg no", "regno", "id", "student id"],
-  aptitude: ["aptitude", "aptitude score", "quant", "quantitative"],
-  reasoning: ["reasoning", "reasoning score", "logical reasoning"],
-  verbal: ["verbal", "verbal score", "english"],
-  communication: ["communication", "communication score", "comm"],
-};
-
-const DEFAULT_SCORE_ORDER: ScoreField[] = ["rollNo", "aptitude", "reasoning", "verbal", "communication"];
-
-export async function addAssessmentScoresAction(rawText: string) {
-  await requireTpo();
-
-  const rawLines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (rawLines.length === 0) return { updated: 0, errors: [] as string[] };
-  if (rawLines.length > 2000) return { updated: 0, errors: ["Please import at most 2000 rows at a time."] };
-
-  const headerMapping = detectHeaderMapping(splitRow(rawLines[0]), SCORE_SYNONYMS);
-  const mapping: Record<ScoreField, number> =
-    headerMapping ?? (Object.fromEntries(DEFAULT_SCORE_ORDER.map((f, i) => [f, i])) as Record<ScoreField, number>);
-  const dataLines = headerMapping ? rawLines.slice(1) : rawLines;
-
-  const updated: string[] = [];
-  const errors: string[] = [];
-
-  for (const [i, line] of dataLines.entries()) {
-    const cells = splitRow(line);
-    const rowLabel = `Row ${i + 1}`;
-    const rollNoRaw = cells[mapping.rollNo]?.trim();
-
-    if (!rollNoRaw) {
-      errors.push(`${rowLabel}: missing roll number.`);
-      continue;
-    }
-    const rollNo = normalizeRollNo(rollNoRaw);
-
-    const aptitude = parseScoreCell(cells[mapping.aptitude]);
-    const reasoning = parseScoreCell(cells[mapping.reasoning]);
-    const verbal = parseScoreCell(cells[mapping.verbal]);
-    const communication = parseScoreCell(cells[mapping.communication]);
-    if ([aptitude, reasoning, verbal, communication].some((v) => Number.isNaN(v))) {
-      errors.push(`${rowLabel} (${rollNo}): each score must be a number from 0 to 100, or left blank.`);
-      continue;
-    }
-
-    // Scores can be set for a registered student or for someone still on the pending list.
-    const student = await prisma.student.findUnique({ where: { rollNo } });
-    const pending = student ? null : await prisma.pendingStudent.findUnique({ where: { rollNo } });
-    const current = student ?? pending;
-    if (!current) {
-      errors.push(`${rowLabel}: roll number "${rollNo}" is not in your students list. Add the student first.`);
-      continue;
-    }
-
-    const data = {
-      aptitudeScore: aptitude ?? current.aptitudeScore,
-      reasoningScore: reasoning ?? current.reasoningScore,
-      verbalScore: verbal ?? current.verbalScore,
-      communicationScore: communication ?? current.communicationScore,
-    };
-    if (student) await prisma.student.update({ where: { id: student.id }, data });
-    else if (pending) await prisma.pendingStudent.update({ where: { id: pending.id }, data });
-    updated.push(rollNo);
-  }
-
-  revalidatePath("/tpo/students");
-  revalidatePath("/tpo/students/scores");
-  return { updated: updated.length, errors };
 }
 
 /* ---------- Editing imported students ---------- */

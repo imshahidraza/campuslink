@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/Card";
-import { AutoScheduleForm } from "@/components/dashboard/AutoScheduleForm";
+import { TpoScheduleResponse } from "@/components/dashboard/TpoScheduleResponse";
 import { AlertTriangle } from "lucide-react";
 import { fmtDateTime } from "@/lib/format";
 
@@ -10,36 +10,65 @@ export default async function SchedulingPage() {
     orderBy: { scheduledAt: "asc" },
   });
 
-  const drives = await prisma.drive.findMany({
-    select: { id: true, jobRole: true, companyName: true, _count: { select: { applications: { where: { stage: "SHORTLISTED" } } } } },
-    orderBy: { createdAt: "desc" },
+  const requests = await prisma.scheduleRequest.findMany({
+    include: { drive: { select: { jobRole: true, companyName: true } } },
+    orderBy: { updatedAt: "desc" },
   });
-  const driveOptions = drives
-    .filter((d) => d._count.applications > 0)
-    .map((d) => ({ id: d.id, label: `${d.jobRole} · ${d.companyName}`, shortlisted: d._count.applications }));
+  // Requests that need the placement cell's answer come first.
+  const order = { WAITING_TPO: 0, WAITING_RECRUITER: 1, CONFIRMED: 2 } as const;
+  requests.sort((a, b) => order[a.status] - order[b.status]);
 
   return (
     <div>
       <h1 className="text-2xl font-semibold text-ink">Interview Scheduling</h1>
       <p className="text-muted text-sm mt-1">
-        All scheduled rounds across drives. Conflicts (student / venue / panel double-booking) are flagged
-        automatically.
+        Agree interview dates with each recruiter, and see every scheduled round across drives. Double-booked
+        students, rooms and panels are caught automatically.
       </p>
 
       <Card className="mt-8">
         <CardHeader>
-          <CardTitle>Auto-schedule a drive</CardTitle>
+          <CardTitle>Interview date requests</CardTitle>
         </CardHeader>
-        <CardContent>
-          <AutoScheduleForm drives={driveOptions} />
+        <CardContent className="pt-3">
+          <p className="text-xs text-muted mb-2 leading-relaxed">
+            Each recruiter asks for dates here. Confirm one or more, with the panels and rooms, or suggest other dates.
+            After that the recruiter books each student&apos;s time inside the confirmed window.
+          </p>
+          {requests.length === 0 && <p className="text-sm text-muted">No recruiter has asked for interview dates yet.</p>}
+          {requests.map((r) => (
+            <TpoScheduleResponse
+              key={r.id}
+              driveId={r.driveId}
+              title={`${r.drive.jobRole} · ${r.drive.companyName}`}
+              request={{
+                status: r.status,
+                dates: r.dates,
+                startTime: r.startTime,
+                endTime: r.endTime,
+                panelCount: r.panelCount,
+                venue: r.venue,
+                panels: r.panels,
+                note: r.note,
+                agreedDates: r.agreedDates,
+                agreedStart: r.agreedStart,
+                agreedEnd: r.agreedEnd,
+                agreedVenue: r.agreedVenue,
+                agreedPanels: r.agreedPanels,
+              }}
+            />
+          ))}
         </CardContent>
       </Card>
 
       <Card className="mt-5">
-        <CardContent className="pt-5 space-y-3">
+        <CardHeader>
+          <CardTitle>Scheduled interviews</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-3 space-y-3">
           {interviews.length === 0 && (
             <p className="text-sm text-muted">
-              No interviews scheduled yet. Schedule one from a drive&apos;s application list.
+              No interviews are booked yet. Recruiters book them after you confirm their dates.
             </p>
           )}
           {interviews.map((iv) => (

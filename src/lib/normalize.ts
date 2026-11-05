@@ -47,3 +47,9 @@ export function tidyName(input: string): string {
     })
     .join(" ");
 }
+
+/** Venue and panel names are saved in capitals with single spaces, so "panel a" and "PANEL A" are one panel. */
+export function normalizeSlotName(raw: string | null | undefined): string | null {
+  const v = (raw ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+  return v ? v.slice(0, 60) : null;
+}

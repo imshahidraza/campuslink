@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { LinkButton } from "@/components/ui/Button";
 import { StudentEditRow } from "@/components/dashboard/StudentEditRow";
-import { Plus, ClipboardList, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 
 const PAGE_SIZE = 40;
 
@@ -61,9 +61,6 @@ export default async function StudentsPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <LinkButton href="/tpo/students/scores" variant="secondary" size="sm">
-            <ClipboardList className="h-4 w-4" /> Assessment scores
-          </LinkButton>
           <LinkButton href="/tpo/students/add" size="sm">
             <Plus className="h-4 w-4" /> Add students
           </LinkButton>

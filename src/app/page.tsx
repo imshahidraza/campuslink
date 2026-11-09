@@ -1,5 +1,8 @@
+import Link from "next/link";
 import { LinkButton } from "@/components/ui/Button";
+import { ScrollMarquee } from "@/components/landing/ScrollMarquee";
 import { ParallaxController } from "@/components/landing/ParallaxController";
+import { ScrollReveal } from "@/components/ui/ScrollReveal";
 import { CustomCursor } from "@/components/landing/CustomCursor";
 import { Petal, Ring, Plus, DotGrid, Arc } from "@/components/landing/Symbols";
 import {
@@ -19,18 +22,18 @@ import {
 const pipeline = ["Profile", "Readiness", "Job Matching", "Explainability", "Shortlisting", "Scheduling", "Interview", "Offer", "Joining", "Analytics"];
 
 const features = [
-  { icon: Sparkles, title: "AI-powered readiness analysis", desc: "Every student gets a clear readiness level, strengths, and skill gaps — with the reasoning behind it." },
-  { icon: Target, title: "Explainable Fit Score", desc: "Gemma reads the JD and the profile, then scores the match with matched skills, gaps, and evidence." },
-  { icon: Eye, title: "Transparent for students", desc: "Students see exactly why they fit a drive, and what to improve — no black box." },
-  { icon: CalendarClock, title: "Conflict-aware scheduling", desc: "Student, venue, and panel double-bookings are caught automatically before they become a problem." },
-  { icon: ShieldCheck, title: "Human-in-the-loop", desc: "AI recommends and explains. The TPO and recruiter always make the final call." },
-  { icon: BarChart3, title: "Placement analytics", desc: "Specialization-wise, skill-wise, and outcome insights — plus early identification of at-risk students." },
+  { icon: Sparkles, title: "AI-powered readiness analysis", desc: "Every student gets a clear readiness level, strengths and skill gaps, along with the reasons behind them." },
+  { icon: Target, title: "Explainable Fit Score", desc: "Gemma reads the JD and the profile, then scores the match and shows the skills that fit, the gaps and the evidence." },
+  { icon: Eye, title: "Transparent for students", desc: "Students see exactly why they fit a drive, and what to improve. Nothing is hidden." },
+  { icon: CalendarClock, title: "Conflict-aware scheduling", desc: "Student, venue and panel double-bookings are caught automatically before they become a problem." },
+  { icon: ShieldCheck, title: "Human-in-the-loop", desc: "AI advises and explains. The placement cell and the recruiter always make the final call." },
+  { icon: BarChart3, title: "Placement analytics", desc: "Insights by specialization, skill and outcome, and an early look at students who may need help." },
 ];
 
 const personas = [
   { icon: GraduationCap, title: "Students", desc: "Understand your readiness, see your fit for every drive, and track your journey end to end." },
-  { icon: Users, title: "TPO / Placement Cell", desc: "One system for programs, drives, AI shortlisting, scheduling, offers, and analytics." },
-  { icon: Building2, title: "Recruiters", desc: "Post a drive and get explainable, ranked candidates — skip the spreadsheets entirely." },
+  { icon: Users, title: "TPO / Placement Cell", desc: "One system for programs, drives, AI shortlisting, scheduling, offers and analytics." },
+  { icon: Building2, title: "Recruiters", desc: "Post a drive and get ranked candidates with clear reasons. No spreadsheets needed." },
 ];
 
 const steps = ["Profile complete", "Readiness analysed", "Matched to drive", "Shortlisted"];
@@ -39,6 +42,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white overflow-x-clip">
       <ParallaxController />
+      <ScrollReveal />
       <CustomCursor />
 
       {/* NAV */}
@@ -61,38 +65,38 @@ export default function LandingPage() {
       {/* HERO */}
       <section className="bg-hero-gradient relative overflow-hidden pt-36 pb-32">
         {/* back layer: slow glows */}
-        <div data-parallax data-speed="0.4" className="absolute -top-40 -left-40 h-[560px] w-[560px] rounded-full bg-brand-500/30 blur-3xl" />
-        <div data-parallax data-speed="0.3" className="absolute top-40 -right-32 h-[420px] w-[420px] rounded-full bg-accent-lime/10 blur-3xl" />
+        <div data-parallax data-speed="0.4" className="absolute -top-40 -left-40 h-[560px] w-[560px] rounded-full bg-accent-lime/10 blur-3xl" />
+        <div data-parallax data-speed="0.3" className="absolute top-40 -right-32 h-[420px] w-[420px] rounded-full bg-white/5 blur-3xl" />
         {/* mid layer: abstract symbols */}
         <div data-parallax data-speed="0.25" data-rotate="4" data-depth="14" className="absolute -top-16 right-[8%]">
-          <Petal className="h-[380px] w-[380px] text-brand-500/30" />
+          <Petal className="h-[380px] w-[380px] text-accent-lime/10" />
         </div>
         <div data-parallax data-speed="0.15" data-rotate="-3" data-depth="18" className="absolute bottom-10 -left-24">
-          <Ring className="h-[340px] w-[340px] text-brand-300/25" />
+          <Ring className="h-[340px] w-[340px] text-accent-lime/15" />
         </div>
         <div data-parallax data-speed="-0.08" data-depth="26" className="absolute top-48 left-[46%] hidden md:block">
           <Plus className="h-8 w-8 text-accent-lime/80" />
         </div>
         <div data-parallax data-speed="0.1" data-depth="22" className="absolute bottom-24 left-[38%] hidden md:block">
-          <DotGrid className="h-20 w-20 text-brand-200/40" />
+          <DotGrid className="h-20 w-20 text-white/25" />
         </div>
 
         <div className="relative mx-auto max-w-7xl px-6 lg:px-8 grid lg:grid-cols-2 gap-14 items-center">
           {/* text (front-ish) */}
           <div data-parallax data-speed="-0.06" data-depth="8" className="max-w-xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs text-brand-200 mb-6">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs text-accent-lime mb-6">
               <Sparkles className="h-3.5 w-3.5" />
-              AI-Powered Campus-to-Corporate Placement Platform
+              AI-powered campus-to-corporate placement platform
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-white leading-[1.08] tracking-tight">
-              Aligning <span className="font-serif italic font-normal text-brand-200">Campus</span>-to-
-              <span className="font-serif italic font-normal text-brand-200">Corporate</span>, intelligently.
+              Aligning <span className="font-serif italic font-normal text-accent-lime">Campus</span>-to-
+              <span className="font-serif italic font-normal text-accent-lime">Corporate</span>, intelligently.
             </h1>
             <p className="mt-6 text-lg text-white/60 leading-relaxed">
-              One system replaces spreadsheets, WhatsApp groups, and manual shortlisting — connecting students, the placement cell, and recruiters from profile to joining.
+              One system replaces spreadsheets, WhatsApp groups and manual shortlisting. It connects students, the placement cell and recruiters from profile to joining.
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-4">
-              <LinkButton href="/login" size="lg">Get started <ArrowRight className="h-4 w-4" /></LinkButton>
+              <LinkButton href="/login" size="lg" className="cta-pulse">Get started <ArrowRight className="h-4 w-4" /></LinkButton>
               <LinkButton href="#pipeline" variant="outline-light" size="lg">See how it works</LinkButton>
             </div>
           </div>
@@ -101,12 +105,12 @@ export default function LandingPage() {
           <div className="relative h-[440px]">
             <div data-parallax data-speed="0.05" data-depth="8" className="absolute inset-0">
               <div data-tilt className="relative h-full rounded-3xl card-glass p-6">
-                <p className="text-xs text-brand-200 mb-4">Placement pipeline</p>
+                <p className="text-xs text-accent-lime mb-4">Placement pipeline</p>
                 <ul className="space-y-3">
                   {steps.map((s) => (
                     <li key={s} className="flex items-center gap-3 text-sm text-white/70">
-                      <span className="h-5 w-5 rounded-full bg-brand-500/60 flex items-center justify-center">
-                        <Check className="h-3 w-3 text-white" />
+                      <span className="h-5 w-5 rounded-full bg-accent-lime flex items-center justify-center">
+                        <Check className="h-3 w-3 text-brand-950" />
                       </span>
                       {s}
                     </li>
@@ -123,11 +127,11 @@ export default function LandingPage() {
                       <p className="text-xs text-muted">6 matched · 1 gap</p>
                     </div>
                     <div className="mt-4 h-2 rounded-full bg-surface-2 overflow-hidden">
-                      <div className="h-full w-[87%] rounded-full bg-brand-500" />
+                      <div className="h-full w-[87%] rounded-full bg-brand-950" />
                     </div>
 
                     <div data-parallax data-speed="-0.2" data-depth="30" className="absolute -top-6 -right-6">
-                      <div className="rounded-full bg-accent-lime px-4 py-2 text-xs font-semibold text-brand-900 shadow-lg">
+                      <div className="rounded-full bg-accent-lime px-4 py-2 text-xs font-semibold text-brand-950 shadow-lg">
                         Highly Ready
                       </div>
                     </div>
@@ -152,15 +156,15 @@ export default function LandingPage() {
       {/* WHO IT'S FOR */}
       <section id="roles" className="bg-brand-950 py-28 relative overflow-hidden">
         <div data-parallax data-speed="0.3" data-rotate="-5" className="absolute -right-32 top-10">
-          <Petal className="h-[420px] w-[420px] text-brand-600/30" />
+          <Petal className="h-[420px] w-[420px] text-white/[0.04]" />
         </div>
         <div data-parallax data-speed="0.18" data-depth="16" className="absolute left-[6%] bottom-10">
-          <Ring className="h-44 w-44 text-brand-300/20" />
+          <Ring className="h-44 w-44 text-accent-lime/20" />
         </div>
         <div className="relative mx-auto max-w-7xl px-6 lg:px-8">
-          <p className="text-brand-200 text-sm mb-3">Who it&apos;s for</p>
+          <p className="text-accent-lime text-sm mb-3">Who it&apos;s for</p>
           <h2 className="text-3xl sm:text-4xl font-semibold text-white max-w-xl">
-            Three roles, <span className="font-serif italic font-normal text-brand-200">one</span> connected system
+            Three roles, <span className="font-serif italic font-normal text-accent-lime">one</span> connected system
           </h2>
           <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-5">
             {personas.map((p, i) => (
@@ -179,18 +183,18 @@ export default function LandingPage() {
       {/* FEATURES */}
       <section id="features" className="py-28 bg-surface relative overflow-hidden">
         <div data-parallax data-speed="0.25" data-depth="12" className="absolute left-[3%] top-16">
-          <DotGrid className="h-24 w-24 text-brand-400/30" />
+          <DotGrid className="h-24 w-24 text-brand-950/20" />
         </div>
         <div data-parallax data-speed="0.2" data-rotate="6" className="absolute -right-16 bottom-0">
-          <Arc className="h-40 w-64 text-brand-200" />
+          <Arc className="h-40 w-64 text-brand-300/50" />
         </div>
         <div data-parallax data-speed="-0.06" data-depth="24" className="absolute right-[12%] top-24 hidden md:block">
-          <Plus className="h-7 w-7 text-brand-500/60" />
+          <Plus className="h-7 w-7 text-brand-950/50" />
         </div>
         <div className="relative mx-auto max-w-7xl px-6 lg:px-8">
-          <p className="text-brand-500 text-sm mb-3 font-medium">Everything you need</p>
+          <p className="text-brand-950 text-sm mb-3 font-semibold inline-block border-b-2 border-accent-lime pb-0.5">Everything you need</p>
           <h2 className="text-3xl sm:text-4xl font-semibold text-ink max-w-xl">
-            Intelligent placement management, <span className="font-serif italic font-normal text-brand-500">end to end</span>
+            Intelligent placement management, <span className="font-serif italic font-normal text-brand-950 underline decoration-accent-lime decoration-4 underline-offset-4">end to end</span>
           </h2>
           <div className="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {features.map((f, i) => (
@@ -211,19 +215,19 @@ export default function LandingPage() {
       {/* PIPELINE */}
       <section id="pipeline" className="py-28 bg-white border-t border-border-soft relative overflow-hidden">
         {/* giant outlined text drifting sideways as you scroll */}
-        <div data-parallax data-x="0.35" className="absolute top-6 left-0 whitespace-nowrap select-none pointer-events-none">
-          <span className="text-outline font-serif italic text-[9rem] leading-none">Campus → Corporate → Campus → Corporate</span>
-        </div>
+        <ScrollMarquee className="absolute top-6 left-0 whitespace-nowrap select-none pointer-events-none">
+          <span className="text-outline font-serif italic text-[5rem] sm:text-[9rem] leading-none">Campus to Corporate to Campus to Corporate</span>
+        </ScrollMarquee>
         <div className="relative mx-auto max-w-7xl px-6 lg:px-8 pt-16">
-          <p className="text-brand-500 text-sm mb-3 font-medium">The core pipeline</p>
+          <p className="text-brand-950 text-sm mb-3 font-semibold inline-block border-b-2 border-accent-lime pb-0.5">The core pipeline</p>
           <h2 className="text-3xl sm:text-4xl font-semibold text-ink max-w-xl">
-            From profile to placement, <span className="font-serif italic font-normal text-brand-500">in one flow</span>
+            From profile to placement, <span className="font-serif italic font-normal text-brand-950 underline decoration-accent-lime decoration-4 underline-offset-4">in one flow</span>
           </h2>
           <div className="mt-14 flex flex-wrap gap-3">
             {pipeline.map((step, i) => (
               <div key={step} className="flex items-center gap-3">
                 <div className="rounded-full border border-border-soft bg-surface px-4 py-2 text-sm text-ink whitespace-nowrap">
-                  <span className="text-brand-500 font-medium mr-1.5">{i + 1}</span>
+                  <span className="text-brand-950 font-semibold mr-1.5 bg-accent-lime rounded-full px-1.5">{i + 1}</span>
                   {step}
                 </div>
                 {i < pipeline.length - 1 && <ArrowRight className="h-4 w-4 text-muted/50 hidden sm:block" />}
@@ -246,7 +250,7 @@ export default function LandingPage() {
         </div>
         <div className="relative mx-auto max-w-4xl px-6 lg:px-8 text-center">
           <h2 className="text-3xl sm:text-5xl font-semibold text-white">
-            Ready to align <span className="font-serif italic font-normal text-brand-200">campus</span> to corporate?
+            Ready to align <span className="font-serif italic font-normal text-accent-lime">campus</span> to corporate?
           </h2>
           <p className="mt-4 text-white/60">Choose your role and create your account in under a minute.</p>
           <div className="mt-8">
@@ -263,7 +267,10 @@ export default function LandingPage() {
             <img src="/logo.jpeg" alt="C-Link" className="h-7 w-7 rounded-md" />
             <span className="font-serif text-lg">C-Link</span>
           </div>
-          <p className="text-white/40 text-xs">AI-assisted, not autonomous — decisions stay human.</p>
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-5">
+            <p className="text-white/40 text-xs">AI advises. Humans decide.</p>
+            <Link href="/privacy" className="text-white/60 hover:text-white text-xs underline underline-offset-4">Privacy &amp; data handling</Link>
+          </div>
         </div>
       </footer>
     </div>

@@ -2,10 +2,17 @@ import { requireStudentOrRedirect } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ProfileForm } from "@/components/dashboard/ProfileForm";
 import { ResumeParser } from "@/components/dashboard/ResumeParser";
+import { ResumeFeedback, type ResumeFeedbackData } from "@/components/dashboard/ResumeFeedback";
 import { ShieldCheck } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 
 export default async function ProfilePage() {
   const { session, student } = await requireStudentOrRedirect();
+  // Metadata only — never select the file bytes here.
+  const resume = await prisma.resume.findUnique({
+    where: { studentId: student.id },
+    select: { fileName: true, size: true, uploadedAt: true },
+  });
 
   return (
     <div>
@@ -23,20 +30,20 @@ export default async function ProfilePage() {
           <CardContent className="space-y-3 text-sm">
             <Row label="Name" value={session.name} />
             <Row label="Roll No." value={student.rollNo} />
-            <Row label="Program" value={student.program || "—"} />
+            <Row label="Program" value={student.program || "Not added"} />
             <Row label="Specialization" value={student.branch} />
             <Row label="CGPA" value={student.cgpa.toFixed(2)} />
             <Row label="Backlogs" value={String(student.backlogs)} />
             <Row label="Graduation Year" value={String(student.graduationYear)} />
-            <Row label="Aptitude" value={student.aptitudeScore != null ? String(student.aptitudeScore) : "—"} />
-            <Row label="Reasoning" value={student.reasoningScore != null ? String(student.reasoningScore) : "—"} />
-            <Row label="Verbal" value={student.verbalScore != null ? String(student.verbalScore) : "—"} />
+            <Row label="Aptitude" value={student.aptitudeScore != null ? String(student.aptitudeScore) : "Not added"} />
+            <Row label="Reasoning" value={student.reasoningScore != null ? String(student.reasoningScore) : "Not added"} />
+            <Row label="Verbal" value={student.verbalScore != null ? String(student.verbalScore) : "Not added"} />
             <Row
               label="Communication"
-              value={student.communicationScore != null ? String(student.communicationScore) : "—"}
+              value={student.communicationScore != null ? String(student.communicationScore) : "Not added"}
             />
             <p className="text-xs text-muted pt-2">
-              Spot an error? Ask your placement cell to correct it — this record is TPO-verified.
+              Spot an error? Ask your placement cell to correct it. This record is verified by the placement cell.
             </p>
           </CardContent>
         </Card>
@@ -44,10 +51,24 @@ export default async function ProfilePage() {
         <div className="lg:col-span-2 space-y-5">
           <Card>
             <CardHeader>
-              <CardTitle>Resume — AI import</CardTitle>
+              <CardTitle>Resume AI import</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResumeParser />
+              <ResumeParser
+                saved={resume ? { studentId: student.id, fileName: resume.fileName, size: resume.size, uploadedAt: resume.uploadedAt.toISOString() } : null}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Resume feedback</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResumeFeedback
+                existing={(student.resumeFeedback as ResumeFeedbackData | null) ?? null}
+                canReview={Boolean(student.resumeText && student.resumeText.trim().length >= 40)}
+              />
             </CardContent>
           </Card>
 
@@ -57,6 +78,7 @@ export default async function ProfilePage() {
             </CardHeader>
             <CardContent>
               <ProfileForm
+                key={JSON.stringify([student.projects, student.skills])}
                 defaults={{
                   skills: student.skills,
                   certifications: student.certifications,
@@ -65,7 +87,13 @@ export default async function ProfilePage() {
                   githubUrl: student.githubUrl,
                   linkedinUrl: student.linkedinUrl,
                   portfolioUrl: student.portfolioUrl,
-                  projectsRaw: student.projects ? JSON.stringify(student.projects) : "",
+                  projects: Array.isArray(student.projects)
+                    ? (student.projects as { title?: string; description?: string; tech?: string[] }[]).map((p) => ({
+                        title: String(p?.title ?? ""),
+                        description: String(p?.description ?? ""),
+                        tech: Array.isArray(p?.tech) ? p.tech.map(String) : [],
+                      }))
+                    : [],
                 }}
               />
             </CardContent>

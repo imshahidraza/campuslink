@@ -34,23 +34,29 @@ export function CreateDriveForm() {
           name="jobDescriptionRaw"
           rows={8}
           required
-          placeholder="Paste the full job description — Gemma will extract required/preferred skills and a summary."
+          placeholder="Paste the full job description. Gemma will extract the required and preferred skills and a short summary."
           className="w-full rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm text-ink focus:outline-none focus:border-brand-300"
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Minimum CGPA" name="minCgpa" placeholder="e.g. 7.0" />
         <Field label="Max backlogs" name="maxBacklogs" placeholder="e.g. 0" />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Eligible specializations (comma-separated)" name="eligibleBranches" placeholder="CSE, IT, ECE" />
-        <Field label="Eligible grad years (comma-separated)" name="eligibleGradYears" placeholder="2026" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field
+          label="Specialization"
+          hint="Enter 'All' to allow candidates from any specialization."
+          name="eligibleBranches"
+          placeholder="e.g. Data Science, Cloud Computing or All"
+        />
+        <Field label="Graduation years (comma-separated)" name="eligibleGradYears" placeholder="e.g. 2026" />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Drive date" name="driveDate" type="date" />
-        <Field label="Venue" name="venue" placeholder="Seminar Hall / Online" />
+        <Field label="Apply by (optional)" name="applyDeadline" type="date" />
       </div>
+      <Field label="Venue" name="venue" placeholder="Seminar Hall or Online" />
 
       {error && <p className="text-sm text-rose-600 bg-rose-50 rounded-lg px-3 py-2">{error}</p>}
 
@@ -64,12 +70,14 @@ export function CreateDriveForm() {
 
 function Field({
   label,
+  hint,
   name,
   placeholder,
   required,
   type = "text",
 }: {
   label: string;
+  hint?: string;
   name: string;
   placeholder?: string;
   required?: boolean;
@@ -77,7 +85,9 @@ function Field({
 }) {
   return (
     <div>
-      <label className="text-xs text-muted mb-1.5 block">{label}</label>
+      <label className="text-xs text-muted mb-1 block">{label}</label>
+      {hint && <p className="text-[11px] text-muted/80 mb-1.5 leading-snug">{hint}</p>}
+      {!hint && <div className="mb-0.5" />}
       <input
         name={name}
         type={type}

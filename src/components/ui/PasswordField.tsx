@@ -37,7 +37,7 @@ export function PasswordField({ value, onChange, placeholder, required, minLengt
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? "Hide password" : "Show password"}
         aria-pressed={visible}
-        className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 active:scale-90 transition-all duration-150"
+        className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full flex items-center justify-center text-muted hover:text-ink hover:bg-surface-2 active:scale-90 transition-all duration-150"
       >
         <span className="relative block h-4 w-4">
           <Eye

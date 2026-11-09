@@ -17,6 +17,7 @@ interface Props {
     eligibleBranches: string;
     eligibleGradYears: string;
     driveDate: string;
+    applyDeadline: string;
     venue: string;
   };
 }
@@ -34,7 +35,7 @@ export function EditDriveForm({ driveId, defaults }: Props) {
         startTransition(async () => {
           try {
             const { jdReanalyzed } = await updateDriveAction(driveId, formData);
-            toast(jdReanalyzed ? "Drive updated — JD re-analyzed with AI." : "Drive updated.");
+            toast(jdReanalyzed ? "Drive updated. The job description was re-analyzed with AI." : "Drive updated.");
             router.push(`/recruiter/drives/${driveId}`);
             router.refresh();
           } catch (err) {
@@ -57,22 +58,28 @@ export function EditDriveForm({ driveId, defaults }: Props) {
           className="w-full rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm text-ink focus:outline-none focus:border-brand-300"
         />
         <p className="text-xs text-muted mt-1.5">
-          Only changed if you edit this text — Gemma re-extracts required/preferred skills when it does.
+          Gemma re-extracts the required and preferred skills only if you change this text.
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Minimum CGPA" name="minCgpa" defaultValue={defaults.minCgpa} />
         <Field label="Max backlogs" name="maxBacklogs" defaultValue={defaults.maxBacklogs} />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Eligible specializations (comma-separated)" name="eligibleBranches" defaultValue={defaults.eligibleBranches} />
-        <Field label="Eligible grad years (comma-separated)" name="eligibleGradYears" defaultValue={defaults.eligibleGradYears} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field
+          label="Specialization"
+          hint="Enter 'All' to allow candidates from any specialization."
+          name="eligibleBranches"
+          defaultValue={defaults.eligibleBranches}
+        />
+        <Field label="Graduation years (comma-separated)" name="eligibleGradYears" defaultValue={defaults.eligibleGradYears} />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Drive date" name="driveDate" type="date" defaultValue={defaults.driveDate} />
-        <Field label="Venue" name="venue" defaultValue={defaults.venue} />
+        <Field label="Apply by (optional)" name="applyDeadline" type="date" defaultValue={defaults.applyDeadline} />
       </div>
+      <Field label="Venue" name="venue" defaultValue={defaults.venue} />
 
       {error && <p className="text-sm text-rose-600 bg-rose-50 rounded-lg px-3 py-2">{error}</p>}
 
@@ -86,12 +93,14 @@ export function EditDriveForm({ driveId, defaults }: Props) {
 
 function Field({
   label,
+  hint,
   name,
   defaultValue,
   required,
   type = "text",
 }: {
   label: string;
+  hint?: string;
   name: string;
   defaultValue?: string;
   required?: boolean;
@@ -99,7 +108,9 @@ function Field({
 }) {
   return (
     <div>
-      <label className="text-xs text-muted mb-1.5 block">{label}</label>
+      <label className="text-xs text-muted mb-1 block">{label}</label>
+      {hint && <p className="text-[11px] text-muted/80 mb-1.5 leading-snug">{hint}</p>}
+      {!hint && <div className="mb-0.5" />}
       <input
         name={name}
         type={type}

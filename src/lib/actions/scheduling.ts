@@ -1,0 +1,235 @@
+"use server";
+
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
+import { getSession, assertRole, assertAnyRole, type SessionPayload } from "@/lib/auth";
+import { assertCanManageDrive, requireApprovedRecruiter } from "@/lib/access";
+import { getAgreedWindow, toMinutes } from "@/lib/schedule";
+import { fmtDateTime, fmtTime } from "@/lib/format";
+import { refreshPlacementStatus } from "@/lib/placement";
+import { autoAllocate, type AllocationPanel, type ScheduledSlot } from "@/lib/rules";
+
+const inputSchema = z.object({
+  driveId: z.string().min(1, "Choose a drive."),
+  round: z.string().trim().min(1, "Enter a round name.").max(60).default("Interview"),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a date."),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, "Choose a start time."),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, "Choose an end time."),
+  durationMins: z.coerce.number().int().min(10, "Interviews must be at least 10 minutes.").max(240),
+  gapMins: z.coerce.number().int().min(0).max(60),
+  breakStart: z.string().regex(/^\d{2}:\d{2}$/).optional().or(z.literal("")),
+  breakEnd: z.string().regex(/^\d{2}:\d{2}$/).optional().or(z.literal("")),
+});
+
+export type AutoScheduleInput = z.input<typeof inputSchema>;
+
+export interface PlanRow {
+  applicationId: string;
+  studentName: string;
+  rollNo: string;
+  panel: string;
+  venue: string | null;
+  scheduledAt: string; // ISO
+  durationMins: number;
+}
+export interface AutoSchedulePlan {
+  rows: PlanRow[];
+  unscheduled: { studentName: string; rollNo: string; reason: string }[];
+  round: string;
+  driveId: string;
+}
+
+/** Only an approved recruiter can book interviews, and only for their own drives (checked again in buildPlan). */
+async function requireScheduler() {
+  const session = await getSession();
+  assertRole(session, "RECRUITER");
+  await requireApprovedRecruiter(session.userId);
+  return session;
+}
+
+/** Builds the plan (does NOT save anything) — used by both preview and confirm so they always agree. */
+async function buildPlan(session: SessionPayload, rawInput: AutoScheduleInput) {
+  const parsed = inputSchema.safeParse(rawInput);
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || "Invalid input.");
+  const input = parsed.data;
+
+  const start = new Date(`${input.date}T${input.startTime}:00`);
+  const end = new Date(`${input.date}T${input.endTime}:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw new Error("Invalid date or time.");
+  if (end <= start) throw new Error("End time must be after the start time.");
+
+  let breakStart: Date | null = null;
+  let breakEnd: Date | null = null;
+  if (input.breakStart && input.breakEnd) {
+    breakStart = new Date(`${input.date}T${input.breakStart}:00`);
+    breakEnd = new Date(`${input.date}T${input.breakEnd}:00`);
+    if (breakEnd <= breakStart) throw new Error("Break end must be after break start.");
+  }
+
+  const drive = await prisma.drive.findUnique({ where: { id: input.driveId } });
+  if (!drive) throw new Error("Drive not found.");
+  await assertCanManageDrive(session, drive.recruiterId);
+
+  // Everything must fit inside the dates, time window and panels agreed with the placement cell.
+  const window = await getAgreedWindow(input.driveId);
+  if (!window) throw new Error("Interview dates are not confirmed yet. Ask the placement cell to confirm them first.");
+  if (!window.dates.includes(input.date)) throw new Error("Choose one of the confirmed interview dates.");
+  if (toMinutes(input.startTime) < toMinutes(window.start) || toMinutes(input.endTime) > toMinutes(window.end)) {
+    throw new Error(`Interviews must fit between ${window.start} and ${window.end}.`);
+  }
+  const panels: AllocationPanel[] = window.panels;
+
+  const shortlisted = await prisma.application.findMany({
+    where: { driveId: input.driveId, stage: "SHORTLISTED" },
+    include: { student: { include: { user: true } } },
+    take: 300,
+  });
+  // Neutral order (roll number) — nobody gets the best slots because of a score.
+  shortlisted.sort((a, b) => a.student.rollNo.localeCompare(b.student.rollNo, undefined, { numeric: true }));
+
+  const dayStart = new Date(start);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(start);
+  dayEnd.setHours(23, 59, 59, 999);
+  const existingRows = await prisma.interview.findMany({
+    where: { scheduledAt: { gte: dayStart, lte: dayEnd } },
+    include: { application: true },
+  });
+  const existing: ScheduledSlot[] = existingRows.map((e) => ({
+    id: e.id,
+    studentId: e.application.studentId,
+    venue: e.venue,
+    panel: e.panel,
+    scheduledAt: e.scheduledAt,
+    durationMins: e.durationMins,
+  }));
+
+  const result = autoAllocate(
+    shortlisted.map((a) => ({ applicationId: a.id, studentId: a.studentId })),
+    existing,
+    { start, end, durationMins: input.durationMins, gapMins: input.gapMins, breakStart, breakEnd, panels }
+  );
+
+  const byApp = new Map(shortlisted.map((a) => [a.id, a]));
+  const rows: PlanRow[] = result.slots
+    .map((s) => {
+      const a = byApp.get(s.applicationId)!;
+      return {
+        applicationId: s.applicationId,
+        studentName: a.student.user.name,
+        rollNo: a.student.rollNo,
+        panel: s.panel,
+        venue: s.venue,
+        scheduledAt: s.scheduledAt.toISOString(),
+        durationMins: s.durationMins,
+      };
+    })
+    .sort((x, y) => x.scheduledAt.localeCompare(y.scheduledAt) || x.panel.localeCompare(y.panel));
+
+  const unscheduled = result.unscheduled.map((u) => {
+    const a = byApp.get(u.applicationId)!;
+    return { studentName: a.student.user.name, rollNo: a.student.rollNo, reason: u.reason };
+  });
+
+  return { rows, unscheduled, round: input.round, driveId: input.driveId, driveRole: drive.jobRole, generalVenue: window.venue, shortlistedCount: shortlisted.length };
+}
+
+/** Step 1 — show the TPO the proposed timetable. Saves nothing. */
+export async function previewAutoScheduleAction(input: AutoScheduleInput): Promise<AutoSchedulePlan> {
+  const session = await requireScheduler();
+  const plan = await buildPlan(session, input);
+  if (plan.shortlistedCount === 0) {
+    throw new Error("This drive has no shortlisted candidates waiting for an interview. Shortlist some first.");
+  }
+  return { rows: plan.rows, unscheduled: plan.unscheduled, round: plan.round, driveId: plan.driveId };
+}
+
+/** Step 2 — the TPO confirmed. We rebuild the plan on the server (never trusting the client's copy), save it and notify students. */
+export async function confirmAutoScheduleAction(input: AutoScheduleInput) {
+  const session = await requireScheduler();
+  const plan = await buildPlan(session, input);
+  if (plan.rows.length === 0) throw new Error("Nothing to schedule.");
+
+  await prisma.$transaction(async (tx) => {
+    for (const row of plan.rows) {
+      const app = await tx.application.findUniqueOrThrow({ where: { id: row.applicationId } });
+      // Guard against someone scheduling this candidate between preview and confirm.
+      if (app.stage !== "SHORTLISTED") continue;
+      const at = new Date(row.scheduledAt);
+      await tx.interview.create({
+        data: {
+          driveId: plan.driveId,
+          applicationId: row.applicationId,
+          stage: plan.round,
+          scheduledAt: at,
+          durationMins: row.durationMins,
+          venue: row.venue ?? plan.generalVenue,
+          panel: row.panel,
+          hasConflict: false,
+          scheduledByRole: "RECRUITER",
+        },
+      });
+      await tx.application.update({ where: { id: row.applicationId }, data: { stage: "INTERVIEW" } });
+      await tx.notification.create({
+        data: {
+          studentId: app.studentId,
+          type: "INTERVIEW_SCHEDULE",
+          title: `Interview scheduled: ${plan.round}`,
+          message: `Your ${plan.round} for ${plan.driveRole} is on ${fmtDateTime(at)}${(row.venue ?? plan.generalVenue) ? ` at ${row.venue ?? plan.generalVenue}` : ""} (${row.panel}).`,
+        },
+      });
+    }
+  });
+
+  for (const row of plan.rows) {
+    const a = await prisma.application.findUnique({ where: { id: row.applicationId }, select: { studentId: true } });
+    if (a) await refreshPlacementStatus(a.studentId);
+  }
+  // Tell the other side once, in a single message.
+  const drive = await prisma.drive.findUniqueOrThrow({ where: { id: plan.driveId } });
+  await prisma.tpoNotification.create({
+    data: {
+      type: "INTERVIEW_SCHEDULE",
+      title: "Interviews scheduled by a recruiter",
+      message: `${drive.companyName} scheduled ${plan.rows.length} ${plan.round} interview${plan.rows.length === 1 ? "" : "s"} for ${drive.jobRole}.`,
+    },
+  });
+
+  revalidatePath("/tpo/scheduling");
+  revalidatePath("/tpo/notifications");
+  revalidatePath("/recruiter/notifications");
+  revalidatePath(`/tpo/drives/${plan.driveId}`);
+  revalidatePath(`/recruiter/drives/${plan.driveId}`);
+  revalidatePath("/student/journey");
+  revalidatePath("/student/notifications");
+  return { scheduled: plan.rows.length, unscheduled: plan.unscheduled.length };
+}
+
+/**
+ * For the "busy day" hint under a date field: what is already scheduled on that day.
+ * Recruiters see only the count and times (never another company's panel or venue).
+ */
+export async function dayLoadAction(date: string) {
+  const session = await getSession();
+  assertAnyRole(session, ["TPO", "RECRUITER"]);
+  const showDetails = session.role === "TPO";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { count: 0, items: [] as { time: string; panel: string | null; venue: string | null }[] };
+  const start = new Date(`${date}T00:00:00`);
+  const end = new Date(`${date}T23:59:59.999`);
+  if (Number.isNaN(start.getTime())) return { count: 0, items: [] };
+  const rows = await prisma.interview.findMany({
+    where: { scheduledAt: { gte: start, lte: end } },
+    orderBy: { scheduledAt: "asc" },
+    select: { scheduledAt: true, panel: true, venue: true },
+    take: 200,
+  });
+  return {
+    count: rows.length,
+    items: rows.slice(0, 6).map((r) => ({
+      time: fmtTime(r.scheduledAt),
+      panel: showDetails ? r.panel : null,
+      venue: showDetails ? r.venue : null,
+    })),
+  };
+}

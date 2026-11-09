@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { matchCandidateToJob } from "@/lib/ai";
-import { checkEligibility } from "@/lib/rules";
+import { checkEligibility, OFFER_PIPELINE_STAGES } from "@/lib/rules";
+import { assertCanManageDrive } from "@/lib/access";
+import { placementCellLabel } from "@/lib/college";
+import { refreshPlacementStatus } from "@/lib/placement";
 import type { Student } from "@prisma/client";
 
 function projectsToText(student: Student): string {
@@ -32,8 +35,21 @@ function assessmentSummary(student: Student): string {
   return parts.length ? parts.join(", ") : "No assessment scores on file";
 }
 
-/** Runs (or re-runs) the AI match for one student against one drive and upserts the Application row. */
-export async function computeMatchForStudentDrive(studentId: string, driveId: string) {
+export interface MatchResult {
+  fitScore: number | null;
+  matchedSkills: string[];
+  missingSkills: string[];
+  relevantProjects: string[];
+  matchExplanation: string | null;
+}
+
+/**
+ * Runs (or re-runs) the AI match for one student against one drive.
+ * The result is saved as the student's private DriveMatch. It becomes visible to a recruiter only
+ * once the student applies (or the placement cell specially recommends them), and if an
+ * application already exists it is refreshed too.
+ */
+export async function computeMatchForStudentDrive(studentId: string, driveId: string): Promise<MatchResult> {
   const [student, drive] = await Promise.all([
     prisma.student.findUniqueOrThrow({ where: { id: studentId } }),
     prisma.drive.findUniqueOrThrow({ where: { id: driveId } }),
@@ -50,34 +66,28 @@ export async function computeMatchForStudentDrive(studentId: string, driveId: st
     jobSummary: drive.jdSummary || drive.jobDescriptionRaw.slice(0, 500),
   });
 
-  const application = await prisma.application.upsert({
+  const values = {
+    fitScore: match.fitScore,
+    matchedSkills: match.matchedSkills,
+    missingSkills: match.missingSkills,
+    relevantProjects: match.relevantProjects,
+    matchExplanation: match.explanation,
+  };
+
+  await prisma.driveMatch.upsert({
     where: { studentId_driveId: { studentId, driveId } },
-    create: {
-      studentId,
-      driveId,
-      stage: "ELIGIBLE",
-      fitScore: match.fitScore,
-      matchedSkills: match.matchedSkills,
-      missingSkills: match.missingSkills,
-      relevantProjects: match.relevantProjects,
-      matchExplanation: match.explanation,
-    },
-    update: {
-      fitScore: match.fitScore,
-      matchedSkills: match.matchedSkills,
-      missingSkills: match.missingSkills,
-      relevantProjects: match.relevantProjects,
-      matchExplanation: match.explanation,
-    },
+    create: { studentId, driveId, ...values },
+    update: values,
   });
+  await prisma.application.updateMany({ where: { studentId, driveId }, data: values });
 
   revalidatePath("/student/drives");
   revalidatePath(`/tpo/drives/${driveId}`);
   revalidatePath(`/recruiter/drives/${driveId}`);
-  return application;
+  return values;
 }
 
-/** Student-triggered: compute (or view cached) AI fit for a drive they're eligible for. */
+/** Student-triggered: see how well they fit a drive they are eligible for. This does not apply for them. */
 export async function studentComputeMatchAction(driveId: string) {
   const session = await getSession();
   assertRole(session, "STUDENT");
@@ -98,55 +108,80 @@ export async function studentComputeMatchAction(driveId: string) {
     if (!existing?.specialConsideration) {
       throw new Error(`You're not eligible for this drive: ${eligibility.reasons.join("; ")}`);
     }
-    // Has a TPO Special Consideration flag for this drive — allowed to see/refresh their own fit.
+    // Has a Special Consideration flag for this drive, so they may see and refresh their own fit.
   }
 
   return computeMatchForStudentDrive(student.id, driveId);
 }
 
-/** TPO/Recruiter-triggered: run AI matching across every rule-eligible student for a drive. */
+/** TPO/Recruiter-triggered: score every applicant of a drive that does not have an AI score yet. */
 export async function runBulkMatchingForDriveAction(driveId: string) {
   const session = await getSession();
   assertAnyRole(session, ["TPO", "RECRUITER"]);
 
   const drive = await prisma.drive.findUniqueOrThrow({ where: { id: driveId } });
-  const students = await prisma.student.findMany({ where: { placementStatus: { not: "JOINED" } } });
+  await assertCanManageDrive(session, drive.recruiterId);
 
-  const rule = {
-    minCgpa: drive.minCgpa,
-    maxBacklogs: drive.maxBacklogs,
-    eligibleBranches: drive.eligibleBranches,
-    eligibleGradYears: drive.eligibleGradYears,
-  };
-
-  const eligible = students.filter((s) => checkEligibility(s, rule).eligible);
+  const applicants = await prisma.application.findMany({
+    where: { driveId, stage: { not: "WITHDRAWN" } },
+    select: { studentId: true, fitScore: true, student: { select: { rollNo: true } } },
+    take: 500,
+  });
+  const todo = applicants.filter((a) => a.fitScore == null);
 
   let processed = 0;
   const errors: string[] = [];
-  for (const student of eligible) {
+  for (const a of todo) {
     try {
-      await computeMatchForStudentDrive(student.id, driveId);
+      await computeMatchForStudentDrive(a.studentId, driveId);
       processed++;
     } catch (err) {
-      errors.push(`${student.rollNo}: ${(err as Error).message}`);
+      errors.push(`${a.student.rollNo}: ${(err as Error).message}`);
     }
   }
 
   revalidatePath(`/tpo/drives/${driveId}`);
   revalidatePath(`/recruiter/drives/${driveId}`);
-  return { totalEligible: eligible.length, processed, errors };
+  return { totalApplicants: applicants.length, needed: todo.length, processed, errors };
 }
 
-export async function updateApplicationStageAction(
-  applicationId: string,
-  stage: "ELIGIBLE" | "SHORTLISTED" | "INTERVIEW" | "SELECTED" | "OFFER" | "REJECTED"
-) {
+type HiringStage = "ELIGIBLE" | "SHORTLISTED" | "INTERVIEW" | "SELECTED" | "REJECTED";
+
+// What a recruiter may do next from each stage. The placement cell is not limited to this list
+// (it can correct a stage), but nobody can touch a withdrawn application or one in the offer process.
+const RECRUITER_NEXT: Record<string, HiringStage[]> = {
+  ELIGIBLE: ["SHORTLISTED", "REJECTED"],
+  SHORTLISTED: ["SELECTED", "REJECTED"],
+  INTERVIEW: ["SELECTED", "REJECTED"],
+  SELECTED: ["REJECTED"],
+  REJECTED: [],
+};
+
+export async function updateApplicationStageAction(applicationId: string, stage: HiringStage, feedbackNote?: string) {
   const session = await getSession();
   assertAnyRole(session, ["TPO", "RECRUITER"]);
+  const existing = await prisma.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    select: { stage: true, drive: { select: { recruiterId: true } } },
+  });
+  // Recruiters may only act on applications for their own drives (IDOR guard).
+  await assertCanManageDrive(session, existing.drive.recruiterId);
+  if (existing.stage === "WITHDRAWN") {
+    throw new Error("This student withdrew their application, so it can't be changed.");
+  }
+  // Once a candidate is in the offer process, hiring-stage changes are locked (the Offers page owns it).
+  if ((OFFER_PIPELINE_STAGES as readonly string[]).includes(existing.stage)) {
+    throw new Error("This candidate is already in the offer process, so their stage can't be changed here.");
+  }
+  if (session.role === "RECRUITER" && !(RECRUITER_NEXT[existing.stage] ?? []).includes(stage)) {
+    throw new Error(`A candidate who is "${existing.stage.toLowerCase()}" can't be moved to "${stage.toLowerCase()}" from here.`);
+  }
+
+  const note = stage === "REJECTED" ? feedbackNote?.trim().slice(0, 500) : undefined;
   const app = await prisma.application.update({
     where: { id: applicationId },
-    data: { stage },
-    include: { student: true, drive: true },
+    data: { stage, ...(note ? { feedbackNote: note } : {}) },
+    include: { student: { include: { user: { select: { name: true } } } }, drive: true },
   });
 
   if (stage === "SHORTLISTED") {
@@ -155,18 +190,47 @@ export async function updateApplicationStageAction(
         studentId: app.studentId,
         type: "SHORTLIST",
         title: `Shortlisted for ${app.drive.jobRole} at ${app.drive.companyName}`,
-        message: `You've been shortlisted. Fit score: ${app.fitScore ?? "N/A"}/100.`,
+        message: `You have been shortlisted. Fit score: ${app.fitScore ?? "not scored yet"}${app.fitScore != null ? "/100" : ""}.`,
       },
     });
-    await prisma.student.update({ where: { id: app.studentId }, data: { placementStatus: "SHORTLISTED" } });
+  }
+  if (stage === "REJECTED") {
+    await prisma.notification.create({
+      data: {
+        studentId: app.studentId,
+        type: "GENERAL",
+        title: `Update on your ${app.drive.jobRole} application`,
+        message: note || `${app.drive.companyName} did not select you for this role this time. Other drives are still open to you.`,
+      },
+    });
   }
   if (stage === "SELECTED") {
-    await prisma.student.update({ where: { id: app.studentId }, data: { placementStatus: "SELECTED" } });
+    await prisma.notification.create({
+      data: {
+        studentId: app.studentId,
+        type: "OFFER_UPDATE",
+        title: `You were selected by ${app.drive.companyName}`,
+        message: `Congratulations! You were selected for ${app.drive.jobRole}. The company will now request your offer through the placement cell.`,
+      },
+    });
+    if (session.role === "RECRUITER") {
+      await prisma.tpoNotification.create({
+        data: {
+          type: "OFFER_UPDATE",
+          title: "A candidate was selected",
+          message: `${app.drive.companyName} selected ${app.student.rollNo} (${app.student.user.name}) for ${app.drive.jobRole}. An offer request should follow.`,
+        },
+      });
+    }
   }
+  await refreshPlacementStatus(app.studentId);
 
   revalidatePath(`/tpo/drives/${app.driveId}`);
   revalidatePath(`/recruiter/drives/${app.driveId}`);
+  revalidatePath("/recruiter/candidates");
   revalidatePath("/student/journey");
+  revalidatePath("/student/notifications");
+  revalidatePath("/tpo/notifications");
   return app;
 }
 
@@ -174,36 +238,53 @@ export async function updateApplicationStageAction(
  * TPO Special Consideration: surfaces one named student to the recruiter for
  * this drive even though they fail a rule-based eligibility check (e.g. low
  * CGPA), when their skills/projects justify a look. Deliberately bypasses
- * checkEligibility() for this one student only — bulk matching and every
- * other student's filtering are completely untouched by this.
- * Does NOT change application stage, shortlist, or select — the TPO/recruiter
- * still make every downstream decision exactly as normal.
+ * checkEligibility() for this one student only; every other student's
+ * filtering is untouched. It does NOT shortlist or select anyone: the
+ * recruiter still makes every downstream decision.
  */
 export async function addSpecialConsiderationAction(driveId: string, studentId: string, note: string) {
   const session = await getSession();
   assertRole(session, "TPO");
 
-  const application = await computeMatchForStudentDrive(studentId, driveId);
+  const [drive, student] = await Promise.all([
+    prisma.drive.findUniqueOrThrow({ where: { id: driveId } }),
+    prisma.student.findUniqueOrThrow({ where: { id: studentId } }),
+  ]);
+  const cleanNote = note.trim().slice(0, 300);
 
-  const updated = await prisma.application.update({
-    where: { id: application.id },
-    data: { specialConsideration: true, specialConsiderationNote: note.trim() || null },
+  const match = await computeMatchForStudentDrive(studentId, driveId);
+  const existing = await prisma.application.findUnique({ where: { studentId_driveId: { studentId, driveId } } });
+  const data = { ...match, specialConsideration: true, specialConsiderationNote: cleanNote || null };
+  const updated = existing
+    ? await prisma.application.update({
+        where: { id: existing.id },
+        // A recommendation also re-opens an application the student had withdrawn.
+        data: { ...data, ...(existing.stage === "WITHDRAWN" ? { stage: "ELIGIBLE" as const } : {}) },
+      })
+    : await prisma.application.create({ data: { studentId, driveId, stage: "ELIGIBLE", ...data } });
+
+  const cell = await placementCellLabel();
+  await prisma.recruiterNotification.create({
+    data: {
+      recruiterId: drive.recruiterId,
+      type: "SPECIAL_CONSIDERATION",
+      title: `${cell} recommended a candidate`,
+      message: `${student.rollNo} was specially recommended for ${drive.jobRole}${cleanNote ? `: "${cleanNote}"` : "."}`,
+    },
   });
+  await refreshPlacementStatus(studentId);
 
   revalidatePath(`/tpo/drives/${driveId}`);
   revalidatePath(`/recruiter/drives/${driveId}`);
   revalidatePath("/student/drives");
+  revalidatePath("/recruiter/notifications");
   return updated;
 }
 
 /**
- * Undoes a Special Consideration. If the student doesn't independently pass
- * the drive's eligibility rules, their Application is removed entirely (so
- * they go back to being invisible to the recruiter, exactly as if they'd
- * never been flagged). If they DO independently qualify — e.g. the TPO
- * loosened the drive's rules since, or flagged someone who already
- * qualified — only the flag/note is cleared and their application stays,
- * same as any other naturally-eligible candidate.
+ * Undoes a Special Consideration. If the student doesn't independently pass the drive's
+ * eligibility rules, their Application is removed (they go back to being invisible to the
+ * recruiter). If they DO qualify, only the flag and note are cleared.
  */
 export async function removeSpecialConsiderationAction(applicationId: string) {
   const session = await getSession();
@@ -221,14 +302,16 @@ export async function removeSpecialConsiderationAction(applicationId: string) {
     eligibleGradYears: application.drive.eligibleGradYears,
   });
 
-  if (eligibility.eligible) {
+  // Only an application nobody has acted on yet can be removed outright; otherwise just clear the flag.
+  if (!eligibility.eligible && application.stage === "ELIGIBLE") {
+    await prisma.application.delete({ where: { id: applicationId } });
+  } else {
     await prisma.application.update({
       where: { id: applicationId },
       data: { specialConsideration: false, specialConsiderationNote: null },
     });
-  } else {
-    await prisma.application.delete({ where: { id: applicationId } });
   }
+  await refreshPlacementStatus(application.studentId);
 
   revalidatePath(`/tpo/drives/${application.driveId}`);
   revalidatePath(`/recruiter/drives/${application.driveId}`);

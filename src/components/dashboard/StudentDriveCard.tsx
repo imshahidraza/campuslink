@@ -2,9 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { studentComputeMatchAction } from "@/lib/actions/matching";
+import { applyToDriveAction, withdrawApplicationAction } from "@/lib/actions/apply";
+import { useToast } from "@/components/ui/Toast";
+import { journeyLabel } from "@/lib/utils";
+import { fmtDate } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
+import { AiWaitNote } from "@/components/ui/Loader";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Sparkles, MapPin, Calendar, Lock, Award } from "lucide-react";
+import { Sparkles, MapPin, Calendar, Lock, Award, Clock } from "lucide-react";
 
 interface ExistingApp {
   fitScore: number | null;
@@ -17,8 +22,12 @@ export function StudentDriveCard({
   drive,
   eligible,
   ineligibleReasons,
+  ineligibleFixes,
   specialConsideration,
+  alreadyJoined,
+  joinedCompany,
   existing,
+  application,
 }: {
   drive: {
     id: string;
@@ -28,12 +37,24 @@ export function StudentDriveCard({
     jdRequiredSkills: string[];
     venue: string | null;
     driveDate: string | null;
+    status: string;
+    applyDeadline: string | null;
   };
   eligible: boolean;
   ineligibleReasons: string[];
+  ineligibleFixes?: { problem: string; fix: string }[];
   specialConsideration?: boolean;
+  alreadyJoined?: boolean;
+  joinedCompany?: string | null;
   existing: ExistingApp | null;
+  application: { stage: string; documentsVerified: boolean } | null;
 }) {
+  const { toast } = useToast();
+  const [appStage, setAppStage] = useState<string | null>(application?.stage ?? null);
+  const hasApplied = appStage !== null && appStage !== "WITHDRAWN";
+  const [deadlinePassed] = useState(() => (drive.applyDeadline ? new Date(drive.applyDeadline).getTime() < Date.now() : false));
+  const canApply = eligible && drive.status === "OPEN" && !deadlinePassed && !hasApplied && !alreadyJoined;
+
   const [result, setResult] = useState<ExistingApp | null>(existing);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -49,6 +70,32 @@ export function StudentDriveCard({
           missingSkills: app.missingSkills,
           matchExplanation: app.matchExplanation,
         });
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    });
+  }
+
+  function handleApply() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await applyToDriveAction(drive.id);
+        setAppStage("ELIGIBLE");
+        toast(`Applied to ${drive.jobRole} at ${drive.companyName}.`);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    });
+  }
+
+  function handleWithdraw() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await withdrawApplicationAction(drive.id);
+        setAppStage("WITHDRAWN");
+        toast("Application withdrawn.", "info");
       } catch (err) {
         setError((err as Error).message);
       }
@@ -86,7 +133,7 @@ export function StudentDriveCard({
           ))}
         </div>
 
-        <div className="mt-3 flex items-center gap-4 text-xs text-muted">
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
           {drive.venue && (
             <span className="flex items-center gap-1">
               <MapPin className="h-3.5 w-3.5" /> {drive.venue}
@@ -97,15 +144,20 @@ export function StudentDriveCard({
               <Calendar className="h-3.5 w-3.5" /> {new Date(drive.driveDate).toLocaleDateString("en-IN", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })}
             </span>
           )}
+          {drive.applyDeadline && (
+            <span className={`flex items-center gap-1 ${deadlinePassed ? "text-rose-600" : ""}`}>
+              <Clock className="h-3.5 w-3.5" /> Apply by {fmtDate(drive.applyDeadline)}
+            </span>
+          )}
         </div>
 
         {eligible && specialConsideration && (
           <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
             <Award className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-800 leading-relaxed">
-              Your placement cell specially recommended you for this drive, even though it falls outside the
-              usual eligibility criteria. This doesn&apos;t guarantee selection — the recruiter still reviews
-              your profile like everyone else&apos;s.
+              Your placement cell recommended you for this drive, even though it is outside the usual eligibility
+              rules. This doesn&apos;t guarantee selection. The recruiter still reviews your profile like everyone
+              else&apos;s.
             </p>
           </div>
         )}
@@ -113,24 +165,36 @@ export function StudentDriveCard({
         {!eligible && (
           <div className="mt-4 rounded-xl bg-surface border border-border-soft p-4">
             <p className="text-sm text-ink flex items-center gap-1.5 font-medium">
-              <Lock className="h-3.5 w-3.5 text-muted" /> Why you&apos;re not eligible
+              <Lock className="h-3.5 w-3.5 text-muted" /> Why you are not eligible
             </p>
-            <ul className="mt-2 space-y-1 text-xs text-muted list-disc list-inside">
-              {ineligibleReasons.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
+            {ineligibleFixes && ineligibleFixes.length > 0 ? (
+              <div className="mt-2 space-y-2.5">
+                {ineligibleFixes.map((f, i) => (
+                  <div key={i} className="text-xs">
+                    <p className="text-ink">{f.problem}</p>
+                    <p className="text-muted mt-0.5">{f.fix}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="mt-2 space-y-1 text-xs text-muted list-disc list-inside">
+                {ineligibleReasons.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
         {eligible && error && <p className="mt-3 text-sm text-rose-600 bg-rose-50 rounded-lg px-3 py-2">{error}</p>}
 
         {eligible && !result?.matchExplanation && (
-          <Button onClick={handleMatch} disabled={isPending} size="sm" className="mt-4">
+          <Button onClick={handleMatch} disabled={isPending} size="sm" variant="secondary" className="mt-4">
             <Sparkles className="h-3.5 w-3.5" />
             {isPending ? "Matching with Gemma..." : "See my AI fit"}
           </Button>
         )}
+        {eligible && isPending && <div className="mt-2"><AiWaitNote show /></div>}
 
         {eligible && result?.matchExplanation && (
           <div className="mt-4 rounded-xl bg-surface border border-border-soft p-4 space-y-2">
@@ -148,8 +212,56 @@ export function StudentDriveCard({
               ))}
             </div>
             <Button onClick={handleMatch} disabled={isPending} size="sm" variant="ghost">
-              {isPending ? "Re-matching..." : "Re-run match"}
+              {isPending ? "Re-matching..." : "Run the match again"}
             </Button>
+          </div>
+        )}
+
+        {eligible && (
+          <div className="mt-4 pt-4 border-t border-border-soft">
+            {hasApplied ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge tone="brand">{journeyLabel(appStage as string, Boolean(application?.documentsVerified))}</Badge>
+                {appStage === "ELIGIBLE" ? (
+                  <Button size="sm" variant="ghost" disabled={isPending} onClick={handleWithdraw}>
+                    {isPending ? "Withdrawing..." : "Withdraw application"}
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted">Follow it on your Placement Journey page.</span>
+                )}
+              </div>
+            ) : alreadyJoined ? (
+              <div className="flex flex-col items-start gap-1.5">
+                <Button
+                  size="sm"
+                  disabled
+                  title="You can't apply to another job after joining a company."
+                  className="opacity-50 cursor-not-allowed"
+                >
+                  Already joined a company
+                </Button>
+                <span className="text-xs text-muted">
+                  {joinedCompany ? `You joined ${joinedCompany}, so you` : "You"} can&apos;t apply to another job.
+                </span>
+              </div>
+            ) : canApply ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="sm" disabled={isPending} onClick={handleApply}>
+                  {isPending ? "Applying..." : appStage === "WITHDRAWN" ? "Apply again" : "Apply"}
+                </Button>
+                <span className="text-xs text-muted">
+                  The recruiter sees your profile only after you apply.
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-muted">
+                {drive.status !== "OPEN"
+                  ? "This drive is not open for applications right now."
+                  : deadlinePassed
+                    ? "The last date to apply has passed."
+                    : ""}
+              </p>
+            )}
           </div>
         )}
       </CardContent>

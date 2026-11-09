@@ -1,5 +1,34 @@
 import { ollamaJSON } from "./ollama";
 
+/* ---------- Safety net for model output ----------
+ * Gemma is asked for strict JSON, but small local models still sometimes return a score as "82.5",
+ * a number above 100, a single string where a list was asked for, or leave a field out. Everything
+ * below runs through these helpers so a bad answer can never crash a page or be saved as garbage. */
+type Raw = Record<string, unknown>;
+
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : fallback;
+}
+function strArr(v: unknown, max = 40): string[] {
+  const list = Array.isArray(v) ? v : typeof v === "string" ? v.split(/[,\n]/) : [];
+  return list
+    .map((x) => (typeof x === "string" ? x.trim() : typeof x === "number" ? String(x) : ""))
+    .filter(Boolean)
+    .slice(0, max);
+}
+function score100(v: unknown): number {
+  const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
+}
+function objArr<K extends string>(v: unknown, keys: readonly K[], max = 20): Record<K, string>[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is Raw => typeof x === "object" && x !== null)
+    .map((x) => Object.fromEntries(keys.map((k) => [k, str(x[k])])) as Record<K, string>)
+    .filter((x) => keys.some((k) => x[k]))
+    .slice(0, max);
+}
+
 /* ---------- A. Resume Understanding ---------- */
 
 export interface ParsedResume {
@@ -12,7 +41,7 @@ export interface ParsedResume {
 }
 
 export async function parseResume(resumeText: string): Promise<ParsedResume> {
-  return ollamaJSON<ParsedResume>({
+  const raw = await ollamaJSON<Raw>({
     system:
       "You are an assistant that extracts structured career information from a student's resume text for a campus placement platform.",
     prompt: resumeText,
@@ -25,6 +54,14 @@ export async function parseResume(resumeText: string): Promise<ParsedResume> {
   "domains": string[]
 }`,
   });
+  return {
+    skills: strArr(raw.skills),
+    technologies: strArr(raw.technologies),
+    projects: objArr(raw.projects, ["title", "description"] as const),
+    certifications: strArr(raw.certifications),
+    experience: objArr(raw.experience, ["title", "org", "description"] as const),
+    domains: strArr(raw.domains),
+  };
 }
 
 /* ---------- B. Job Description Understanding ---------- */
@@ -40,7 +77,7 @@ export interface ParsedJD {
 }
 
 export async function parseJobDescription(jdText: string, jobRole: string): Promise<ParsedJD> {
-  return ollamaJSON<ParsedJD>({
+  const raw = await ollamaJSON<Raw>({
     system:
       "You are an assistant that reads a recruiter's job description for a campus placement drive and extracts structured hiring requirements.",
     prompt: `Job role: ${jobRole}\n\nJob description:\n${jdText}`,
@@ -54,6 +91,15 @@ export async function parseJobDescription(jdText: string, jobRole: string): Prom
   "summary": string
 }`,
   });
+  return {
+    role: str(raw.role, jobRole) || jobRole,
+    requiredSkills: strArr(raw.requiredSkills),
+    preferredSkills: strArr(raw.preferredSkills),
+    eligibilityNotes: strArr(raw.eligibilityNotes),
+    qualifications: strArr(raw.qualifications),
+    experienceNeeded: str(raw.experienceNeeded),
+    summary: str(raw.summary),
+  };
 }
 
 /* ---------- C + D. Candidate-Job Matching + Explainability ---------- */
@@ -77,7 +123,7 @@ export async function matchCandidateToJob(input: {
   preferredSkills: string[];
   jobSummary: string;
 }): Promise<MatchResult> {
-  return ollamaJSON<MatchResult>({
+  const raw = await ollamaJSON<Raw>({
     system: `You compare a student's profile against a job's requirements for a campus placement platform.
 Produce an AI Fit Score from 0-100 representing how well the profile matches the STATED requirements
 (skills, projects, certifications, assessments) — NOT a prediction of selection probability.
@@ -102,6 +148,14 @@ Preferred skills: ${input.preferredSkills.join(", ")}`,
   "explanation": string
 }`,
   });
+  return {
+    fitScore: score100(raw.fitScore),
+    matchedSkills: strArr(raw.matchedSkills),
+    missingSkills: strArr(raw.missingSkills),
+    relevantProjects: strArr(raw.relevantProjects),
+    relevantCertifications: strArr(raw.relevantCertifications),
+    explanation: str(raw.explanation, "No explanation was returned. Try running the match again."),
+  };
 }
 
 /* ---------- Readiness Analysis (student-facing, not tied to one job) ---------- */
@@ -127,7 +181,7 @@ export async function analyzeReadiness(input: {
   experience: string;
   preferredRoles: string[];
 }): Promise<ReadinessResult> {
-  return ollamaJSON<ReadinessResult>({
+  const raw = await ollamaJSON<Raw>({
     system: `You assess a student's overall placement readiness for a campus recruitment platform.
 Levels, from lowest to highest: NOT_READY, DEVELOPING, READY, HIGHLY_READY.
 Base the level on academic standing, assessment scores, and career profile completeness/strength
@@ -149,6 +203,15 @@ Preferred roles/domains: ${input.preferredRoles.join(", ") || "not specified"}`,
   "improvementAreas": string[]
 }`,
   });
+  const levels = ["NOT_READY", "DEVELOPING", "READY", "HIGHLY_READY"] as const;
+  const level = str(raw.readinessLevel).toUpperCase().replace(/[\s-]+/g, "_");
+  return {
+    readinessLevel: (levels as readonly string[]).includes(level) ? (level as ReadinessResult["readinessLevel"]) : "DEVELOPING",
+    summary: str(raw.summary),
+    strengths: strArr(raw.strengths),
+    skillGaps: strArr(raw.skillGaps),
+    improvementAreas: strArr(raw.improvementAreas),
+  };
 }
 
 /* ---------- F. Personalized Preparation ---------- */
@@ -162,7 +225,7 @@ export async function generatePrepPlan(input: {
   skillGaps: string[];
   targetRole: string;
 }): Promise<PrepPlan> {
-  return ollamaJSON<PrepPlan>({
+  const raw = await ollamaJSON<Raw>({
     system:
       "You generate a short, actionable preparation plan for a student targeting a specific role, based on their current skill gaps.",
     prompt: `Target role: ${input.targetRole}\nSkill gaps: ${input.skillGaps.join(", ")}`,
@@ -171,4 +234,58 @@ export async function generatePrepPlan(input: {
   "recommendations": [{"area": string, "suggestion": string}]
 }`,
   });
+  return {
+    focusAreas: strArr(raw.focusAreas),
+    recommendations: objArr(raw.recommendations, ["area", "suggestion"] as const),
+  };
+}
+
+/* ---------- Skill roadmap (from the gaps across the student's open drives) ---------- */
+
+export interface Roadmap {
+  steps: { skill: string; whyItMatters: string; howToLearn: string; miniProject: string }[];
+}
+
+export async function generateRoadmap(input: {
+  gaps: { skill: string; drives: number; roles: string[] }[];
+  currentSkills: string[];
+}): Promise<Roadmap> {
+  const raw = await ollamaJSON<Raw>({
+    system:
+      "You are a friendly placement mentor. For each missing skill, give a short, realistic plan a student can start this week. Keep every field to one or two sentences. Do not invent courses, websites or certificates by name.",
+    prompt: `Student's current skills: ${input.currentSkills.join(", ") || "none listed"}
+Missing skills (with how many open drives ask for them):
+${input.gaps
+      .map((g) => `- ${g.skill}: wanted by ${g.drives} drive(s) (${g.roles.join(", ")})`)
+      .join("\n")}`,
+    schemaHint: `{
+  "steps": [{"skill": string, "whyItMatters": string, "howToLearn": string, "miniProject": string}]
+}`,
+    temperature: 0.3,
+  });
+  return { steps: objArr(raw.steps, ["skill", "whyItMatters", "howToLearn", "miniProject"] as const, 5) };
+}
+
+/* ---------- Resume feedback ---------- */
+
+export interface ResumeFeedback {
+  strengths: string[];
+  improvements: { issue: string; suggestion: string }[];
+}
+
+export async function reviewResume(resumeText: string): Promise<ResumeFeedback> {
+  const raw = await ollamaJSON<Raw>({
+    system:
+      "You review a student's resume for a campus placement. Give 2-3 genuine strengths and 3-5 specific, concrete improvements (e.g. add measurable results, name the technologies used, shorten vague bullets). Refer to actual content in the resume. Be encouraging, never harsh. Do not rewrite the whole resume.",
+    prompt: resumeText.slice(0, 12000),
+    schemaHint: `{
+  "strengths": string[],
+  "improvements": [{"issue": string, "suggestion": string}]
+}`,
+    temperature: 0.3,
+  });
+  return {
+    strengths: strArr(raw.strengths, 4),
+    improvements: objArr(raw.improvements, ["issue", "suggestion"] as const, 6),
+  };
 }

@@ -30,7 +30,10 @@ model Specialization {
 model College {
   id          String   @id @default(cuid())
   name        String
-  emailDomain String? // e.g. "mycollege.edu" — if set, student signup emails must match it
+  emailDomain String? // e.g. "mycollege.edu" (if set, student signup emails must match it)
+  // Where students are told to email their documents after accepting an offer.
+  // If empty, the first TPO account's email is shown instead.
+  tpoEmail    String?
   createdAt   DateTime @default(now())
 }
 
@@ -46,6 +49,12 @@ model PendingStudent {
   cgpa           Float
   backlogs       Int
   graduationYear Int
+  // Optional assessment scores imported together with the roster; copied to the
+  // Student record when the student signs up.
+  aptitudeScore      Int?
+  reasoningScore     Int?
+  verbalScore        Int?
+  communicationScore Int?
   createdAt      DateTime @default(now())
 }
 
@@ -80,8 +89,25 @@ enum ApplicationStage {
   SHORTLISTED
   INTERVIEW
   SELECTED
-  OFFER
-  REJECTED
+  OFFER_REQUESTED // recruiter asked the TPO to extend an offer
+  OFFER_SENT // TPO forwarded it to the student — awaiting their response
+  OFFER_ACCEPTED // student accepted — placed, pending joining formalities
+  OFFER_DECLINED // student declined — does NOT block other drives
+  JOINED // documents verified + joining confirmed
+  REJECTED // shown to users as "Not selected"
+  WITHDRAWN // the student withdrew their own application
+}
+
+enum ScheduleStatus {
+  WAITING_TPO // the recruiter sent preferred dates; the placement cell has to answer
+  WAITING_RECRUITER // the placement cell suggested other dates; the recruiter has to answer
+  CONFIRMED // both sides agreed
+}
+
+enum RecruiterStatus {
+  PENDING
+  APPROVED
+  DECLINED
 }
 
 enum NotificationType {
@@ -90,12 +116,18 @@ enum NotificationType {
   INTERVIEW_SCHEDULE
   DOCUMENT_DEADLINE
   OFFER_UPDATE
+  SPECIAL_CONSIDERATION
+  OFFER_RESPONSE
   GENERAL
 }
 
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
+  // Optional, unverified (no OTP). Collected for TPO and Recruiter accounts so
+  // they can sign in with a phone number instead of email. Stored normalized
+  // (+<countrycode><number>); students sign in with their roll number instead.
+  phone     String?  @unique
   password  String
   role      Role
   name      String
@@ -126,6 +158,8 @@ model Student {
   // Student-provided career data
   resumeText     String?
   resumeSkills   String[] @default([])
+  // The uploaded PDF itself lives in its own table so normal student queries never load the bytes.
+  resume         Resume?
   skills         String[] @default([])
   projects       Json?    // [{title, description, tech[]}]
   certifications String[] @default([])
@@ -144,11 +178,20 @@ model Student {
   improvementAreas String[] @default([])
   readinessUpdatedAt DateTime?
 
+  // On-demand AI outputs, cached so a click doesn't recompute (and a slow local model isn't hit twice)
+  roadmap          Json?     // { steps: [...], basedOn: [...] } — skills to learn next, from open drives
+  roadmapUpdatedAt DateTime?
+  resumeFeedback   Json?     // { strengths: string[], improvements: [...] }
+  resumeFeedbackAt DateTime?
+
   applications  Application[]
+  matches       DriveMatch[]
   notifications Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([program, branch])
 }
 
 model Recruiter {
@@ -161,7 +204,11 @@ model Recruiter {
   website     String?
   industry    String?
 
-  drives Drive[]
+  // New recruiters wait for the TPO to approve them before they can create drives.
+  status RecruiterStatus @default(PENDING)
+
+  drives        Drive[]
+  notifications RecruiterNotification[]
 
   createdAt DateTime @default(now())
 }
@@ -190,12 +237,39 @@ model Drive {
   venue       String?
   interviewStages String[] @default([])
   status      DriveStatus @default(DRAFT)
+  // Optional last moment a student can apply or withdraw.
+  applyDeadline DateTime?
 
   applications Application[]
   interviews   Interview[]
+  scheduleRequest ScheduleRequest?
+  matches      DriveMatch[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([recruiterId])
+  @@index([status])
+}
+
+/// A student's private AI fit check for a drive. It is NOT an application:
+/// recruiters only see a student after they press Apply (see Application).
+model DriveMatch {
+  id        String  @id @default(cuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  driveId   String
+  drive     Drive   @relation(fields: [driveId], references: [id], onDelete: Cascade)
+
+  fitScore         Int?
+  matchedSkills    String[] @default([])
+  missingSkills    String[] @default([])
+  relevantProjects String[] @default([])
+  matchExplanation String?
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, driveId])
 }
 
 model Application {
@@ -214,6 +288,10 @@ model Application {
   specialConsideration     Boolean @default(false)
   specialConsiderationNote String?
 
+  // Optional constructive note shown to the student on rejection — framed as
+  // growth ("work on communication"), never as a dead-end failure.
+  feedbackNote String?
+
   // AI matching output
   fitScore          Int?
   matchedSkills      String[] @default([])
@@ -221,10 +299,18 @@ model Application {
   relevantProjects   String[] @default([])
   matchExplanation   String?
 
-  offerPackage String?
-  offerStatus  String? // Offer Received / Accepted / Declined
-  documentsVerified Boolean @default(false)
-  joined       Boolean @default(false)
+  // Offer pipeline — stage (above) is the single source of truth for where
+  // things stand; these are just the "when" for each step, for display.
+  offerPackage      String? // set once, by the recruiter, when they request the offer
+  offerMessage      String? // the recruiter's multi-line message to the candidate
+  offerWithdrawnAt  DateTime?
+  offerWithdrawnNote String? // why the recruiter withdrew the offer, shown to the student
+  offerRequestedAt  DateTime?
+  offerSentAt       DateTime?
+  offerRespondedAt  DateTime?
+  documentsVerified Boolean   @default(false)
+  joined            Boolean   @default(false)
+  joinedByRole      Role?     // who confirmed the joining (the placement cell or the recruiter)
 
   interviews Interview[]
 
@@ -232,6 +318,8 @@ model Application {
   updatedAt DateTime @updatedAt
 
   @@unique([studentId, driveId])
+  @@index([driveId, stage])
+  @@index([studentId])
 }
 
 model Interview {
@@ -249,8 +337,17 @@ model Interview {
 
   hasConflict Boolean @default(false)
   conflictNote String?
+  // The TPO knowingly scheduled this despite a clash (e.g. the recruiter can only come then).
+  overridden     Boolean @default(false)
+  overrideReason String?
+  // Who set this slot up (the recruiter or the placement cell).
+  scheduledByRole Role @default(TPO)
 
   createdAt DateTime @default(now())
+
+  @@index([driveId])
+  @@index([applicationId])
+  @@index([scheduledAt])
 }
 
 model Notification {
@@ -262,4 +359,76 @@ model Notification {
   message   String
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
+
+  @@index([studentId, read])
+}
+
+/// Broadcast to every TPO at this college (there's typically just one, but
+/// supports more). Single shared `read` flag is a deliberate simplification
+/// for this single-college build, not a per-TPO read receipt.
+model TpoNotification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}
+
+model RecruiterNotification {
+  id          String           @id @default(cuid())
+  recruiterId String
+  recruiter   Recruiter        @relation(fields: [recruiterId], references: [id])
+  type        NotificationType
+  title       String
+  message     String
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  @@index([recruiterId, read])
+}
+
+/// The student's uploaded resume PDF, kept in its own table so list queries never
+/// pull the file bytes. Viewable only via /api/resume/[studentId], which checks
+/// who is asking (student: own, TPO: any, recruiter: only their drives' applicants).
+model Resume {
+  id         String   @id @default(cuid())
+  studentId  String   @unique
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  fileName   String
+  size       Int
+  data       Bytes
+  uploadedAt DateTime @default(now())
+}
+
+/// One per drive: the date, time window, venue and panels the recruiter and the placement cell agree on.
+/// Interviews can only be booked inside the last agreed window.
+model ScheduleRequest {
+  id      String @id @default(cuid())
+  driveId String @unique
+  drive   Drive  @relation(fields: [driveId], references: [id])
+
+  status ScheduleStatus @default(WAITING_TPO)
+
+  // The proposal that is on the table right now.
+  dates          String[] @default([]) // yyyy-mm-dd, up to 3 options
+  startTime      String // HH:mm
+  endTime        String // HH:mm
+  panelCount     Int      @default(1)
+  venue          String?
+  panels         String? // one per line: "PANEL A @ ROOM 101"
+  note           String?
+  proposedByRole Role
+
+  // The last agreed window. Bookings must fit inside it.
+  agreedDates  String[] @default([])
+  agreedStart  String?
+  agreedEnd    String?
+  agreedVenue  String?
+  agreedPanels String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
 }

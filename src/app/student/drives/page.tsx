@@ -10,6 +10,12 @@ export default async function DrivesPage() {
     include: { applications: true, matches: true },
   });
 
+  const joinedApp =
+    student.placementStatus === "JOINED"
+      ? await prisma.application.findFirst({ where: { studentId: student.id, stage: "JOINED" }, include: { drive: true } })
+      : null;
+  const joined = student.placementStatus === "JOINED";
+
   const openDrives = await prisma.drive.findMany({
     where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
     orderBy: { createdAt: "desc" },
@@ -40,6 +46,13 @@ export default async function DrivesPage() {
         Apply.
       </p>
 
+      {joined && (
+        <div className="mt-5 rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm text-ink">
+          You have joined {joinedApp ? `${joinedApp.drive.companyName} as ${joinedApp.drive.jobRole}` : "a company"}, so you
+          can&apos;t apply to other drives. Congratulations!
+        </div>
+      )}
+
       <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-5">
         {drivesWithEligibility.map(({ drive, eligibility, fixes }) => {
           const app = appByDrive.get(drive.id);
@@ -62,6 +75,8 @@ export default async function DrivesPage() {
               ineligibleReasons={eligibility.reasons}
               ineligibleFixes={fixes}
               specialConsideration={Boolean(app?.specialConsideration)}
+              alreadyJoined={joined}
+              joinedCompany={joinedApp?.drive.companyName ?? null}
               existing={
                 match
                   ? {

@@ -24,6 +24,8 @@ export function StudentDriveCard({
   ineligibleReasons,
   ineligibleFixes,
   specialConsideration,
+  alreadyJoined,
+  joinedCompany,
   existing,
   application,
 }: {
@@ -42,6 +44,8 @@ export function StudentDriveCard({
   ineligibleReasons: string[];
   ineligibleFixes?: { problem: string; fix: string }[];
   specialConsideration?: boolean;
+  alreadyJoined?: boolean;
+  joinedCompany?: string | null;
   existing: ExistingApp | null;
   application: { stage: string; documentsVerified: boolean } | null;
 }) {
@@ -49,7 +53,7 @@ export function StudentDriveCard({
   const [appStage, setAppStage] = useState<string | null>(application?.stage ?? null);
   const hasApplied = appStage !== null && appStage !== "WITHDRAWN";
   const [deadlinePassed] = useState(() => (drive.applyDeadline ? new Date(drive.applyDeadline).getTime() < Date.now() : false));
-  const canApply = eligible && drive.status === "OPEN" && !deadlinePassed && !hasApplied;
+  const canApply = eligible && drive.status === "OPEN" && !deadlinePassed && !hasApplied && !alreadyJoined;
 
   const [result, setResult] = useState<ExistingApp | null>(existing);
   const [error, setError] = useState<string | null>(null);
@@ -225,6 +229,20 @@ export function StudentDriveCard({
                 ) : (
                   <span className="text-xs text-muted">Follow it on your Placement Journey page.</span>
                 )}
+              </div>
+            ) : alreadyJoined ? (
+              <div className="flex flex-col items-start gap-1.5">
+                <Button
+                  size="sm"
+                  disabled
+                  title="You can't apply to another job after joining a company."
+                  className="opacity-50 cursor-not-allowed"
+                >
+                  Already joined a company
+                </Button>
+                <span className="text-xs text-muted">
+                  {joinedCompany ? `You joined ${joinedCompany}, so you` : "You"} can&apos;t apply to another job.
+                </span>
               </div>
             ) : canApply ? (
               <div className="flex flex-wrap items-center gap-3">

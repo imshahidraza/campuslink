@@ -20,7 +20,7 @@ export default async function StudentOverview() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-ink">Welcome back, {session.name.split(" ")[0]}</h1>
+      <h1 className="text-2xl font-semibold text-ink">Welcome, {session.name.split(" ")[0]}</h1>
       <p className="text-muted text-sm mt-1">Here&apos;s where your placement journey stands.</p>
 
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-5">

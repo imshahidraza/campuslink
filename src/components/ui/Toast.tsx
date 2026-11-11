@@ -33,7 +33,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const counter = useRef(0);
 
-  const toast = useCallback((message: string, tone: ToastTone = "success") => {
+  const toast = useCallback((raw: string, tone: ToastTone = "success") => {
+    // In a production build Next hides the text of an error thrown by a server action behind this generic sentence.
+    // Showing it as is would confuse people, so say something useful instead.
+    const message = /omitted in production builds/i.test(raw) ? "That didn't work. Please check what you entered, refresh the page and try again." : raw;
     const id = ++counter.current;
     setItems((prev) => [...prev, { id, message, tone }]);
     setTimeout(() => {

@@ -6,7 +6,10 @@ import { TERMINAL_STAGES } from "@/lib/rules";
 import { journeyLabel } from "@/lib/utils";
 import { getDocumentsEmail } from "@/lib/college";
 import { Check, Sparkles } from "lucide-react";
-import { fmtDateTime } from "@/lib/format";
+import { fmtDate, fmtDateTime } from "@/lib/format";
+import { OfferTermsLine, OfferTypeBadge } from "@/components/dashboard/OfferTermsLine";
+import { DeferralRequestForm } from "@/components/dashboard/DeferralRequestForm";
+import { fmtJoining, toYmd } from "@/lib/offerRules";
 
 const STEP_INDEX: Record<string, number> = {
   ELIGIBLE: 0,
@@ -72,7 +75,10 @@ export default async function JourneyPage() {
                 {app.stage === "REJECTED" && <Badge tone="danger">Not selected</Badge>}
                 {app.stage === "OFFER_DECLINED" && <Badge tone="neutral">Offer declined</Badge>}
                 {app.stage === "WITHDRAWN" && <Badge tone="neutral">Withdrawn</Badge>}
-                {!isTerminal && <Badge tone="brand">{journeyLabel(app.stage, app.documentsVerified)}</Badge>}
+                <div className="flex items-center gap-2">
+                  {(app.offerPackage || app.offerCtcLpa != null || app.offerStipend != null) && <OfferTypeBadge type={app.offerType} />}
+                  {!isTerminal && <Badge tone="brand">{journeyLabel(app.stage, app.documentsVerified)}</Badge>}
+                </div>
               </CardHeader>
               <CardContent>
                 {!isTerminal && (
@@ -113,11 +119,16 @@ export default async function JourneyPage() {
                   </div>
                 )}
 
-                {app.offerPackage && (
-                  <p className="mt-4 text-sm text-ink">
-                    <span className="font-medium">Offer package: </span>
-                    {app.offerPackage}
-                  </p>
+                {(app.offerPackage || app.offerCtcLpa != null || app.offerStipend != null) && (
+                  <div className="mt-4">
+                    <p className="text-sm text-ink font-medium">Your offer</p>
+                    <OfferTermsLine offer={app} className="text-sm text-muted mt-0.5" />
+                    {app.convertedFromInternship && (
+                      <p className="text-xs text-muted mt-1">
+                        This full-time offer follows your internship{app.offerStipend != null ? " (you keep that record)" : ""}.
+                      </p>
+                    )}
+                  </div>
                 )}
                 {app.offerMessage && ["OFFER_SENT", "OFFER_ACCEPTED", "JOINED", "OFFER_DECLINED"].includes(app.stage) && (
                   <div className="mt-3 rounded-xl bg-surface border border-border-soft p-4">
@@ -149,8 +160,47 @@ export default async function JourneyPage() {
                     </p>
                   </div>
                 )}
+                {app.stage === "OFFER_ACCEPTED" && (
+                  <div className="mt-4 rounded-xl bg-surface border border-border-soft p-4">
+                    {app.documentsDueAt && !app.documentsVerified && (
+                      <p className="text-sm text-ink">
+                        <span className="font-medium">Documents due by: </span>
+                        {fmtDate(app.documentsDueAt)}
+                      </p>
+                    )}
+                    {app.deferralStatus === "PENDING" && app.deferralRequestedDate && (
+                      <p className="text-sm text-ink mt-1">
+                        <span className="font-medium">Joining date request: </span>
+                        waiting for the placement cell (you asked for {fmtJoining(app.deferralRequestedDate)}).
+                      </p>
+                    )}
+                    {app.deferralStatus === "APPROVED" && app.joiningDate && (
+                      <p className="text-sm text-emerald-700 mt-1">
+                        Your joining date was moved{app.previousJoiningDate ? ` from ${fmtJoining(app.previousJoiningDate)}` : ""} to {fmtJoining(app.joiningDate)}.
+                        {app.deferralNote ? ` Note: ${app.deferralNote}` : ""}
+                      </p>
+                    )}
+                    {app.deferralStatus === "DECLINED" && (
+                      <p className="text-sm text-muted mt-1 whitespace-pre-line">
+                        Your last request to move the joining date was declined{app.deferralNote ? `: ${app.deferralNote}` : "."}
+                      </p>
+                    )}
+                    {app.deferralStatus !== "PENDING" && (
+                      <div className="mt-2">
+                        <DeferralRequestForm
+                          applicationId={app.id}
+                          currentJoining={app.joiningDate ? toYmd(app.joiningDate) : null}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 {app.stage === "JOINED" && (
-                  <p className="mt-4 text-sm text-emerald-700 font-medium">You have joined {app.drive.companyName}. Congratulations!</p>
+                  <p className="mt-4 text-sm text-emerald-700 font-medium">
+                    {app.offerType === "INTERNSHIP"
+                      ? `You have started your internship at ${app.drive.companyName}. Congratulations!`
+                      : `You have joined ${app.drive.companyName}. Congratulations!`}
+                  </p>
                 )}
 
                 {app.interviews.length > 0 && (

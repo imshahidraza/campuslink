@@ -6,6 +6,7 @@ import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { parseJobDescription } from "@/lib/ai";
 import { assertCanManageDrive, requireApprovedRecruiter } from "@/lib/access";
 import { parseSpecializationList } from "@/lib/normalize";
+import { announceDrive } from "@/lib/announce";
 
 /** Only an approved recruiter can create or change drives. */
 async function requireRecruiter() {
@@ -142,16 +143,8 @@ export async function updateDriveStatusAction(
   await prisma.drive.update({ where: { id: driveId }, data: { status } });
 
   if (status === "OPEN" && previous.status !== "OPEN") {
-    const drive = previous;
-    const students = await prisma.student.findMany({ where: { placementStatus: { not: "JOINED" } } });
-    await prisma.notification.createMany({
-      data: students.map((s) => ({
-        studentId: s.id,
-        type: "DRIVE_ANNOUNCEMENT" as const,
-        title: `New drive: ${drive.jobRole} at ${drive.companyName}`,
-        message: drive.jdSummary || "A new placement drive has opened. Check your eligibility.",
-      })),
-    });
+    // Opening a drive announces it to the students who meet its rules (not to everyone).
+    await announceDrive(previous);
   }
 
   revalidatePath("/recruiter/drives");

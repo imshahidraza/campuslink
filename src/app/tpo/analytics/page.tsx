@@ -1,5 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/Card";
+import { CommandDashboard } from "@/components/dashboard/CommandDashboard";
+import {
+  computeOfferStats,
+  computeRecruiterRows,
+  computeMonthlyTrend,
+  computeBranchConversion,
+  computeDocJoinSummary,
+  type AnalyticsApp,
+} from "@/lib/analytics";
 
 function Bar({ label, value, max }: { label: string; value: number; max: number }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
@@ -28,10 +37,55 @@ const CGPA_BANDS = [
 ];
 
 export default async function AnalyticsPage() {
-  const [students, applications] = await Promise.all([
+  const [students, applications, drives] = await Promise.all([
     prisma.student.findMany(),
-    prisma.application.findMany({ select: { studentId: true, stage: true } }),
+    prisma.application.findMany({
+      select: {
+        studentId: true,
+        driveId: true,
+        stage: true,
+        offerType: true,
+        offerCtcLpa: true,
+        offerStipend: true,
+        offerPackage: true,
+        offerSentAt: true,
+        documentsVerified: true,
+        documentsDueAt: true,
+        joiningDate: true,
+        deferralStatus: true,
+        convertedFromInternship: true,
+        drive: { select: { recruiterId: true, companyName: true } },
+      },
+    }),
+    prisma.drive.findMany({ select: { id: true, recruiterId: true, companyName: true, createdAt: true } }),
   ]);
+
+  // Command dashboard numbers (offers, packages, recruiters, branches, documents and joining).
+  const analyticsApps: AnalyticsApp[] = applications.map((a) => ({
+    studentId: a.studentId,
+    driveId: a.driveId,
+    recruiterId: a.drive.recruiterId,
+    companyName: a.drive.companyName,
+    stage: a.stage,
+    offerType: a.offerType,
+    offerCtcLpa: a.offerCtcLpa,
+    offerStipend: a.offerStipend,
+    offerPackage: a.offerPackage,
+    offerSentAt: a.offerSentAt,
+    documentsVerified: a.documentsVerified,
+    documentsDueAt: a.documentsDueAt,
+    joiningDate: a.joiningDate,
+    deferralStatus: a.deferralStatus,
+    convertedFromInternship: a.convertedFromInternship,
+  }));
+  const offerStats = computeOfferStats(analyticsApps);
+  const recruiterRows = computeRecruiterRows(analyticsApps, drives);
+  const monthRows = computeMonthlyTrend(analyticsApps);
+  const branchConversion = computeBranchConversion(
+    students.map((s) => ({ id: s.id, branch: s.branch, placementStatus: s.placementStatus })),
+    analyticsApps
+  );
+  const docSummary = computeDocJoinSummary(analyticsApps, new Date());
 
   // Fairness check: does advancement track CGPA alone, or spread across bands?
   const advancedIds = new Set(applications.filter((a) => ADVANCED_STAGES.includes(a.stage)).map((a) => a.studentId));
@@ -82,9 +136,15 @@ export default async function AnalyticsPage() {
   return (
     <div>
       <h1 className="text-2xl font-semibold text-ink">Analytics</h1>
-      <p className="text-muted text-sm mt-1">Fairness of selections, specialization-wise outcomes, common skill gaps, and students who need support.</p>
+      <p className="text-muted text-sm mt-1">
+        Offers and packages, recruiters, specialization-wise conversion, documents and joining, then fairness of selections, common skill gaps, and students who need support.
+      </p>
 
-      <Card className="mt-8">
+      <div className="mt-8">
+        <CommandDashboard offers={offerStats} recruiters={recruiterRows} months={monthRows} branches={branchConversion} docs={docSummary} />
+      </div>
+
+      <Card className="mt-5">
         <CardHeader>
           <CardTitle>Fairness check: is advancement driven by CGPA alone?</CardTitle>
         </CardHeader>

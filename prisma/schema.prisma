@@ -98,6 +98,27 @@ enum ApplicationStage {
   WITHDRAWN // the student withdrew their own application
 }
 
+/// What kind of offer this is. Old offers (made before this existed) default to FULL_TIME.
+enum OfferType {
+  INTERNSHIP
+  PPO // pre-placement offer: a job offer made on the back of an internship or earlier performance
+  FULL_TIME
+}
+
+/// A student's request to move the joining date of an accepted offer. The placement cell decides.
+enum DeferralStatus {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
+/// Where a student on the support (escalation) list stands.
+enum EscalationStatus {
+  OPEN // flagged by the rules, no mentor yet
+  ASSIGNED // a mentor is looking after the student
+  RESOLVED
+}
+
 enum ScheduleStatus {
   WAITING_TPO // the recruiter sent preferred dates; the placement cell has to answer
   WAITING_RECRUITER // the placement cell suggested other dates; the recruiter has to answer
@@ -187,6 +208,7 @@ model Student {
   applications  Application[]
   matches       DriveMatch[]
   notifications Notification[]
+  escalation    Escalation?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -239,6 +261,9 @@ model Drive {
   status      DriveStatus @default(DRAFT)
   // Optional last moment a student can apply or withdraw.
   applyDeadline DateTime?
+  // When the placement cell last announced this drive to eligible students, and to how many.
+  announcedAt    DateTime?
+  announcedCount Int?
 
   applications Application[]
   interviews   Interview[]
@@ -311,6 +336,33 @@ model Application {
   documentsVerified Boolean   @default(false)
   joined            Boolean   @default(false)
   joinedByRole      Role?     // who confirmed the joining (the placement cell or the recruiter)
+
+  // Offer details. All optional or defaulted, so offers made before this existed keep working
+  // (they show as Full-time, with their original offerPackage text).
+  offerType               OfferType @default(FULL_TIME)
+  offerCtcLpa             Float? // CTC as a number, in lakh per annum (Full-time and PPO)
+  offerStipend            Int? // stipend in rupees per month (Internship)
+  bondMonths              Int? // joining bond / service agreement length; empty = no bond
+  bondNote                String? // bond details, e.g. the amount
+  joiningDate             DateTime? @db.Date
+  convertedFromInternship Boolean   @default(false)
+  convertedAt             DateTime?
+
+  // Joining-date deferral: the student asks, the placement cell decides.
+  deferralStatus        DeferralStatus?
+  deferralReason        String?
+  deferralRequestedDate DateTime?       @db.Date
+  deferralRequestedAt   DateTime?
+  deferralDecidedAt     DateTime?
+  deferralNote          String? // the placement cell's reason, shown to the student
+  previousJoiningDate   DateTime?       @db.Date // the date before an approved deferral
+
+  // In-app reminders (no email or SMS). Each timestamp stops the same reminder going out twice.
+  documentsDueAt     DateTime?
+  docReminderSentAt  DateTime?
+  docOverdueSentAt   DateTime?
+  offerFollowUpAt    DateTime?
+  offerFollowUpCount Int       @default(0)
 
   interviews Interview[]
 
@@ -429,6 +481,24 @@ model ScheduleRequest {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+/// The support list: students the rules flag as at risk of finishing the season unplaced.
+/// The rules only flag; the placement cell picks the mentor. One row per student.
+model Escalation {
+  id         String           @id @default(cuid())
+  studentId  String           @unique
+  student    Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reasons    String[]         @default([]) // why the rules flagged them, in plain words
+  status     EscalationStatus @default(OPEN)
+  mentorName String?
+  note       String?
+  assignedAt DateTime?
+  resolvedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
   @@index([status])
 }

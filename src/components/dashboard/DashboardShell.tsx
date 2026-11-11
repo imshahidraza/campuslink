@@ -19,6 +19,9 @@ import {
   Award,
   BarChart3,
   GraduationCap,
+  LifeBuoy,
+  MessageCircleQuestion,
+  Mic,
 } from "lucide-react";
 import { OllamaStatus } from "./OllamaStatus";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -35,6 +38,8 @@ const NAV_CONFIG: Record<
     { label: "Readiness", href: "/student/readiness", icon: Gauge },
     { label: "Drives & Matching", href: "/student/drives", icon: Briefcase },
     { label: "Placement Journey", href: "/student/journey", icon: Route },
+    { label: "Eligibility Assistant", href: "/student/assistant", icon: MessageCircleQuestion },
+    { label: "Interview Practice", href: "/student/practice", icon: Mic },
     { label: "Notifications", href: "/student/notifications", icon: Bell },
   ],
   tpo: [
@@ -46,6 +51,7 @@ const NAV_CONFIG: Record<
     { label: "Scheduling", href: "/tpo/scheduling", icon: CalendarClock },
     { label: "Offers", href: "/tpo/offers", icon: Award },
     { label: "Notifications", href: "/tpo/notifications", icon: Bell },
+    { label: "Support list", href: "/tpo/support", icon: LifeBuoy },
     { label: "Analytics", href: "/tpo/analytics", icon: BarChart3 },
   ],
   recruiter: [

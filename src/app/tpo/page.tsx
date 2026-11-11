@@ -1,12 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/Card";
 import { LinkButton } from "@/components/ui/Button";
+import { AutomationCard } from "@/components/dashboard/AutomationCard";
 import { stageLabel } from "@/lib/utils";
 import Link from "next/link";
 import { Users, Briefcase, Award, TrendingUp, GraduationCap, ArrowRight } from "lucide-react";
 
 export default async function TpoOverview() {
-  const [studentCount, openDrives, placedCount, recentDrives, specializationCount, college, pendingRecruiters, offersToReview, docsToVerify, datesToAnswer] = await Promise.all([
+  const [studentCount, openDrives, placedCount, recentDrives, specializationCount, college, pendingRecruiters, offersToReview, docsToVerify, datesToAnswer, deferralsToAnswer, supportOpen] = await Promise.all([
     prisma.student.count(),
     prisma.drive.count({ where: { status: "OPEN" } }),
     prisma.student.count({ where: { placementStatus: { in: ["OFFER_ACCEPTED", "JOINED"] } } }),
@@ -17,12 +18,16 @@ export default async function TpoOverview() {
     prisma.application.count({ where: { stage: "OFFER_REQUESTED" } }),
     prisma.application.count({ where: { stage: "OFFER_ACCEPTED", documentsVerified: false } }),
     prisma.scheduleRequest.count({ where: { status: "WAITING_TPO" } }),
+    prisma.application.count({ where: { stage: "OFFER_ACCEPTED", deferralStatus: "PENDING" } }),
+    prisma.escalation.count({ where: { status: "OPEN" } }),
   ]);
   const attention = [
     { n: pendingRecruiters, text: "recruiter waiting for approval", plural: "recruiters waiting for approval", href: "/tpo/recruiters" },
     { n: datesToAnswer, text: "interview date request to answer", plural: "interview date requests to answer", href: "/tpo/scheduling" },
     { n: offersToReview, text: "offer request to review", plural: "offer requests to review", href: "/tpo/offers" },
     { n: docsToVerify, text: "student whose documents need checking", plural: "students whose documents need checking", href: "/tpo/offers" },
+    { n: supportOpen, text: "student on the support list who needs a mentor", plural: "students on the support list who need a mentor", href: "/tpo/support" },
+    { n: deferralsToAnswer, text: "joining date request to answer", plural: "joining date requests to answer", href: "/tpo/offers" },
   ].filter((a) => a.n > 0);
 
   const placementRate = studentCount > 0 ? ((placedCount / studentCount) * 100).toFixed(1) : "0.0";
@@ -74,6 +79,8 @@ export default async function TpoOverview() {
         <StatCard icon={Award} label="Placed" value={String(placedCount)} />
         <StatCard icon={TrendingUp} label="Placement rate" value={`${placementRate}%`} />
       </div>
+
+      <AutomationCard />
 
       <Card className="mt-8">
         <CardHeader className="flex flex-row items-center justify-between">

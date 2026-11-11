@@ -11,7 +11,9 @@
     "db:migrate": "prisma migrate dev --name init",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
-    "reset-password": "tsx scripts/reset-password.ts"
+    "reset-password": "tsx scripts/reset-password.ts",
+    "selftest": "tsx scripts/selftest.ts",
+    "evaluate": "tsx scripts/evaluate-fit.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

@@ -9,6 +9,11 @@ import {
   withdrawOfferAction,
   markJoinedAction,
 } from "@/lib/actions/offers";
+import { convertToFullTimeAction } from "@/lib/actions/offerChanges";
+import { OfferFormFields, type OfferFormDefaults } from "./OfferFormFields";
+import { OfferTermsLine } from "./OfferTermsLine";
+import { fmtJoining, todayYmd, toYmd } from "@/lib/offerRules";
+import { OFFER_FOLLOW_UP_AFTER_DAYS, daysBetween } from "@/lib/automationRules";
 import { Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
@@ -32,6 +37,17 @@ interface Props {
     matchExplanation: string | null;
     offerPackage?: string | null;
     offerMessage?: string | null;
+    offerType?: string | null;
+    offerCtcLpa?: number | null;
+    offerStipend?: number | null;
+    bondMonths?: number | null;
+    bondNote?: string | null;
+    joiningDate?: Date | string | null;
+    previousJoiningDate?: Date | string | null;
+    convertedFromInternship?: boolean | null;
+    offerSentAt?: Date | string | null;
+    deferralStatus?: string | null;
+    deferralRequestedDate?: Date | string | null;
     offerWithdrawnNote?: string | null;
     documentsVerified?: boolean;
     specialConsideration?: boolean;
@@ -73,6 +89,7 @@ export function RecruiterCandidateRow({ application, window }: Props) {
   const [editingOffer, setEditingOffer] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawReason, setWithdrawReason] = useState("");
+  const [converting, setConverting] = useState(false);
 
   const stage = application.stage;
   const name = application.student.user.name;
@@ -123,7 +140,10 @@ export function RecruiterCandidateRow({ application, window }: Props) {
               <span className="font-medium">Placement cell note:</span> {application.specialConsiderationNote}
             </p>
           )}
-          {application.offerPackage && <p className="text-xs text-muted mt-1.5">Offered: {application.offerPackage}</p>}
+          {(application.offerPackage || application.offerCtcLpa != null || application.offerStipend != null) &&
+            !["ELIGIBLE", "SHORTLISTED", "INTERVIEW", "SELECTED", "REJECTED", "WITHDRAWN"].includes(stage) && (
+              <OfferTermsLine offer={application} className="text-xs text-muted mt-1.5" />
+            )}
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 sm:justify-end">
           {application.specialConsideration && (
@@ -236,13 +256,10 @@ export function RecruiterCandidateRow({ application, window }: Props) {
           onCancel={() => setRequestingOffer(false)}
           onSubmit={(fd) =>
             startTransition(async () => {
-              try {
-                await requestOfferAction(application.id, fd);
-                toast("Offer request sent to the placement cell for review.");
-                setRequestingOffer(false);
-              } catch (err) {
-                toast((err as Error).message, "error");
-              }
+              const r = await requestOfferAction(application.id, fd);
+              if (!r.ok) return toast(r.error, "error");
+              toast("Offer request sent to the placement cell for review.");
+              setRequestingOffer(false);
             })
           }
         />
@@ -284,17 +301,23 @@ export function RecruiterCandidateRow({ application, window }: Props) {
           title="Edit the offer"
           submitLabel="Save changes"
           busy={isPending}
-          defaults={{ offerPackage: application.offerPackage ?? "", offerMessage: application.offerMessage ?? "" }}
+          forceType={application.convertedFromInternship ? "FULL_TIME" : undefined}
+          defaults={{
+            offerType: application.offerType,
+            offerCtcLpa: application.offerCtcLpa,
+            offerStipend: application.offerStipend,
+            bondMonths: application.bondMonths,
+            bondNote: application.bondNote,
+            joiningDate: application.joiningDate ? toYmd(new Date(application.joiningDate)) : undefined,
+            offerMessage: application.offerMessage,
+          }}
           onCancel={() => setEditingOffer(false)}
           onSubmit={(fd) =>
             startTransition(async () => {
-              try {
-                await editOfferRequestAction(application.id, fd);
-                toast("Offer updated.");
-                setEditingOffer(false);
-              } catch (err) {
-                toast((err as Error).message, "error");
-              }
+              const r = await editOfferRequestAction(application.id, fd);
+              if (!r.ok) return toast(r.error, "error");
+              toast("Offer updated.");
+              setEditingOffer(false);
             })
           }
         />
@@ -305,6 +328,9 @@ export function RecruiterCandidateRow({ application, window }: Props) {
           {application.offerMessage && (
             <p className="text-xs text-muted whitespace-pre-line mb-2">Your message: {application.offerMessage}</p>
           )}
+          {application.convertedFromInternship && (
+            <p className="text-xs text-muted mb-1">This is a full-time offer that follows the student&apos;s internship.</p>
+          )}
           <p className="text-xs text-muted">
             {stage === "OFFER_SENT"
               ? "Offer sent. Waiting for the student's reply."
@@ -312,7 +338,27 @@ export function RecruiterCandidateRow({ application, window }: Props) {
                 ? "Offer accepted and documents verified. You or the placement cell can mark the student as joined."
                 : "Offer accepted. The placement cell is verifying the student's documents."}
           </p>
+          {stage === "OFFER_SENT" && application.offerSentAt && daysBetween(new Date(application.offerSentAt), new Date()) >= OFFER_FOLLOW_UP_AFTER_DAYS && (
+            <p className="mt-1 text-xs text-amber-800">
+              No reply for {daysBetween(new Date(application.offerSentAt), new Date())} days. You may want to follow up with the student.
+            </p>
+          )}
+          {stage === "OFFER_ACCEPTED" && application.deferralStatus === "PENDING" && application.deferralRequestedDate && (
+            <p className="mt-1 text-xs text-amber-800">
+              The student asked to move the joining date to {fmtJoining(application.deferralRequestedDate)}. The placement cell will decide.
+            </p>
+          )}
+          {application.deferralStatus === "APPROVED" && application.previousJoiningDate && application.joiningDate && (
+            <p className="mt-1 text-xs text-muted">
+              Joining date moved from {fmtJoining(application.previousJoiningDate)} to {fmtJoining(application.joiningDate)} (approved by the placement cell).
+            </p>
+          )}
           <div className="mt-2 flex flex-wrap gap-2">
+            {application.offerType === "INTERNSHIP" && stage === "OFFER_ACCEPTED" && !converting && (
+              <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setConverting(true)}>
+                Convert to full-time
+              </Button>
+            )}
             {stage === "OFFER_ACCEPTED" && application.documentsVerified && (
               <Button
                 size="sm"
@@ -376,56 +422,66 @@ export function RecruiterCandidateRow({ application, window }: Props) {
           )}
         </div>
       )}
-      {stage === "JOINED" && <p className="mt-3 text-xs text-emerald-700">This candidate has joined your company.</p>}
+      {converting && application.offerType === "INTERNSHIP" && (stage === "OFFER_ACCEPTED" || stage === "JOINED") && (
+        <OfferForm
+          title="Convert to a full-time offer"
+          submitLabel="Send to placement cell"
+          busy={isPending}
+          forceType="FULL_TIME"
+          note="This starts a full-time offer for the same student. The placement cell reviews it and the student accepts or declines it, like any other offer."
+          onCancel={() => setConverting(false)}
+          onSubmit={(fd) =>
+            startTransition(async () => {
+              const r = await convertToFullTimeAction(application.id, fd);
+              if (!r.ok) return toast(r.error, "error");
+              toast("Full-time offer sent to the placement cell for review.");
+              setConverting(false);
+            })
+          }
+        />
+      )}
+      {stage === "JOINED" && (
+        <div className="mt-3">
+          <p className="text-xs text-emerald-700">
+            {application.offerType === "INTERNSHIP" ? "This intern has started with your company." : "This candidate has joined your company."}
+          </p>
+          {application.offerType === "INTERNSHIP" && !converting && (
+            <Button size="sm" variant="secondary" className="mt-2" disabled={isPending} onClick={() => setConverting(true)}>
+              Convert to full-time
+            </Button>
+          )}
+        </div>
+      )}
       {stage === "WITHDRAWN" && <p className="mt-3 text-xs text-muted">The student withdrew this application.</p>}
     </div>
   );
 }
 
-/** The offer form: a package on one line and a message box where Enter starts a new line. */
+/** The offer form: type, package, joining date, bond and a message where Enter starts a new line. */
 function OfferForm({
   title,
   submitLabel,
   busy,
   defaults,
+  forceType,
+  note,
   onSubmit,
   onCancel,
 }: {
   title: string;
   submitLabel: string;
   busy: boolean;
-  defaults?: { offerPackage: string; offerMessage: string };
+  defaults?: OfferFormDefaults;
+  forceType?: "FULL_TIME";
+  note?: string;
   onSubmit: (formData: FormData) => void;
   onCancel: () => void;
 }) {
   return (
-    <form
-      action={(fd) => onSubmit(fd)}
-      className="mt-3 rounded-xl border border-border-soft bg-surface p-4 space-y-3"
-    >
+    <form action={(fd) => onSubmit(fd)} className="mt-3 rounded-xl border border-border-soft bg-surface p-4 space-y-3">
       <p className="text-sm font-medium text-ink">{title}</p>
-      <label className="block text-xs text-muted">
-        Package
-        <input
-          name="offerPackage"
-          required
-          maxLength={100}
-          defaultValue={defaults?.offerPackage}
-          placeholder="e.g. 12 LPA"
-          className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink"
-        />
-      </label>
-      <label className="block text-xs text-muted">
-        Message to the candidate (optional). Press Enter to start a new line.
-        <textarea
-          name="offerMessage"
-          rows={7}
-          maxLength={2000}
-          defaultValue={defaults?.offerMessage}
-          placeholder={"Dear candidate,\n\nWe are happy to offer you the role of ...\n\nJoining date: ...\nLocation: ...\n\nRegards,"}
-          className="mt-1 w-full rounded-lg border border-border-soft bg-white px-3 py-2 text-sm text-ink leading-relaxed"
-        />
-      </label>
+      {note && <p className="text-xs text-muted leading-relaxed">{note}</p>}
+      <OfferFormFields defaults={defaults} forceType={forceType} minDate={todayYmd()} />
       <div className="flex flex-wrap gap-2">
         <Button type="submit" size="sm" disabled={busy}>
           {busy ? "Saving..." : submitLabel}

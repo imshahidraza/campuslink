@@ -19,7 +19,11 @@ export default async function OffersPage() {
   const docsEmail = await getDocumentsEmail();
 
   const needsReview = offers.filter((o) => o.stage === "OFFER_REQUESTED");
-  const inProgress = offers.filter((o) => o.stage === "OFFER_SENT" || o.stage === "OFFER_ACCEPTED");
+  // Joining-date requests get their own list at the top, so they are not buried among the offers in progress.
+  const deferrals = offers.filter((o) => o.stage === "OFFER_ACCEPTED" && o.deferralStatus === "PENDING");
+  const inProgress = offers.filter(
+    (o) => (o.stage === "OFFER_SENT" || o.stage === "OFFER_ACCEPTED") && !(o.stage === "OFFER_ACCEPTED" && o.deferralStatus === "PENDING")
+  );
   const resolved = offers.filter((o) => o.stage === "OFFER_DECLINED" || o.stage === "JOINED");
 
   return (
@@ -45,6 +49,23 @@ export default async function OffersPage() {
                   {a.student.rollNo} · {a.drive.jobRole} at {a.drive.companyName}
                 </span>
               </p>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {deferrals.length > 0 && (
+        <Card className="mt-8 border-amber-200 bg-amber-50/40">
+          <CardHeader>
+            <CardTitle>Joining date requests ({deferrals.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted mb-2">
+              These students accepted an offer and ask to join later. Approving moves the joining date shown to the student and
+              the recruiter.
+            </p>
+            {deferrals.map((app) => (
+              <OfferRow key={app.id} application={app} />
             ))}
           </CardContent>
         </Card>

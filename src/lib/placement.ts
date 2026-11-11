@@ -17,10 +17,13 @@ const PROGRESS: Record<string, { status: PlacementStatus; rank: number }> = {
 
 /** Recomputes Student.placementStatus from all of the student's applications. Call after any stage change. */
 export async function refreshPlacementStatus(studentId: string) {
-  const apps = await prisma.application.findMany({ where: { studentId }, select: { stage: true } });
+  const apps = await prisma.application.findMany({ where: { studentId }, select: { stage: true, offerType: true } });
   let best: { status: PlacementStatus; rank: number } = { status: "UNPLACED", rank: 0 };
   for (const a of apps) {
-    const p = PROGRESS[a.stage];
+    let p = PROGRESS[a.stage];
+    // An internship is not a placement: even once accepted or started, the student still counts as
+    // "offer received" and can keep applying. It becomes a placement if it is converted to full-time.
+    if (p && a.offerType === "INTERNSHIP" && p.rank >= 6) p = { status: "OFFER_RECEIVED", rank: 5 };
     if (p && p.rank > best.rank) best = p;
   }
   await prisma.student.update({ where: { id: studentId }, data: { placementStatus: best.status } });

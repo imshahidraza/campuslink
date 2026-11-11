@@ -6,7 +6,7 @@ One system replaces spreadsheets, WhatsApp groups and manual shortlisting. It co
 
 > The screens say "C-Link". The code, database and package keep the name `campuslink`.
 
-**Stack:** Next.js 16 (App Router, server actions), React 19, TypeScript, Tailwind v4, Prisma 6 + PostgreSQL, Zod, and a **local** Ollama model (`gemma4:e4b`) for every AI feature. Responsive, works on desktop and phones.
+**Stack:** Next.js 16 (App Router, server actions), React 19, TypeScript, Tailwind v4, Prisma 6 + PostgreSQL, Zod, and a **local** Ollama model (Gemma, set by `OLLAMA_MODEL`) for every AI feature. Responsive, works on desktop and phones.
 
 ## Run it
 
@@ -18,7 +18,7 @@ npm run db:migrate
 npm run dev              # http://localhost:3000
 ```
 
-Keep `ollama serve` running with the model `gemma4:e4b`.
+Keep `ollama serve` running with the model set in `OLLAMA_MODEL`.
 
 ### Environment (`.env`)
 
@@ -29,6 +29,7 @@ Keep `ollama serve` running with the model `gemma4:e4b`.
 | `JWT_SECRET` | Signs the login cookie. **Production refuses a missing, short or placeholder value.** Generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. |
 | `TPO_SIGNUP_CODE` | Private code needed to register a placement-cell account. If it is not set, only the very first TPO can ever register. |
 | `TZ` (optional) | Set to `Asia/Kolkata` on a server so interview times stay in IST. |
+| `OFFER_FOLLOW_UP_DAYS` (optional) | Days before the recruiter is prompted about an offer nobody has answered (default 3). Set to `1` only to show it in a demo. |
 
 ### Production
 
@@ -38,6 +39,21 @@ npm start
 ```
 
 Use either `npm run dev` or `npm run build` + `npm start` on a given day, not both. If you see a React hydration or "error #441", stop the server, delete the `.next` folder, and start again in one mode.
+
+### Upgrading a database that already has data
+
+The offer, automation and support-list features add **optional columns and one new table**. Nothing is deleted or rewritten.
+
+```bash
+# 1. Back up first
+pg_dump "$DATABASE_URL" > backup.sql
+# 2. Apply the additive upgrade (safe to run twice)
+npx prisma db execute --file prisma/upgrade/jury-features.sql --schema prisma/schema.prisma
+# 3. Refresh the client
+npx prisma generate
+```
+
+After that, **do not run `prisma migrate dev` or `npm run db:reset`** on this database: they would see the extra columns as drift and offer to wipe it. A brand-new empty database can still use `npm run db:migrate`.
 
 ### Resetting test data
 
@@ -88,6 +104,34 @@ Offers originate with the **recruiter**:
 
 Stages: Applied → Shortlisted → Interview → Selected → Offer requested → Offer sent → Offer accepted → Joined. Side branches: Not selected, Offer declined, Withdrawn.
 
+## Offer terms, deferral and conversion
+
+* Every offer has a **type**: Internship, PPO (pre-placement offer) or Full-time. Offers made before this update show as Full-time with their old package text.
+* Full-time and PPO offers carry **CTC in LPA** (stored as a number, so averages and trends are exact). Internship offers carry a **monthly stipend**. An optional **joining bond** (months and a note) and **joining date** can be added.
+* An accepted internship does **not** count as placed. When the recruiter clicks **Convert to full-time** on it, a new full-time offer goes through the same steps (placement cell forwards it, student accepts or declines).
+* After accepting, a student can **request a joining-date deferral** with a reason and the new date. The placement cell approves or declines (a decline needs a written reason). An approved date replaces the joining date everywhere, and the old date is kept.
+
+## Command dashboard (TPO -> Analytics)
+
+Offers made, accepted and pending; average and highest package; package trend by month; recruiter pipeline and repeat hiring; branch-wise conversion; document and joining summary. All numbers are plain counts and averages of real records. Internships are shown separately and never counted as placed.
+
+## Workflow automation (in-app only, no email or SMS)
+
+* **Drive announcements:** opening a drive notifies only the students who are eligible for it. The TPO can announce again to those who have not applied yet, at most once every 10 minutes.
+* **Document deadlines:** accepting an offer sets a deadline 7 days out (the TPO can change it). The student is reminded 2 days before and told when it is overdue; the TPO is told about overdue ones.
+* **Recruiter follow-ups:** an offer with no student answer after 3 days prompts the recruiter and reminds the student (up to 3 times).
+* **Support list (TPO -> Support list):** students with a plain-rule risk reason (not ready, repeated rejections with nothing active, no applications despite an open eligible drive for a week) are listed. The TPO assigns a mentor and records notes; the entry closes by itself when the student is placed. Nobody is auto-rejected or ranked.
+* Checks run on their own every 10 minutes while someone is using the site, and the TPO can press **Run checks now**. Each reminder is claimed in the database before it is sent, so it cannot be sent twice.
+
+## Student assistant and interview practice
+
+* **Eligibility Assistant:** the student asks "Am I eligible for TCS?", "Why not?", "What is the last date?". The answer comes from the exact rules and the student's own record. The local AI is optional and only rewords it; wording that adds any number or verdict not in the facts is thrown away.
+* **Interview Practice:** practice questions for a drive's job description, based on the student's own missing skills. Generated by the local AI, rate-limited.
+
+## Evaluation
+
+`npm run evaluate` runs the fit score repeatedly on sample pairs and reports consistency and timing. See `docs/EVALUATION.md`. `npm run selftest` runs 37 quick checks of the plain rules (offers, deferral, reminders, risk list, analytics, assistant).
+
 ## AI features
 
 All AI runs locally through Ollama (Gemma), one request at a time, with the model kept loaded for 30 minutes. A fit check can take up to a minute.
@@ -104,6 +148,7 @@ All AI runs locally through Ollama (Gemma), one request at a time, with the mode
 * Role and ownership checks on every server action and route. Hiding a button is only for convenience.
 * Zod validation on input, Prisma parameterised queries (no raw SQL), React escaping for output.
 * Production refuses a weak `JWT_SECRET`. Browser source maps and the framework header are off. Frames are denied, and content-type sniffing is off.
+* Every new action checks the role, the ownership of the record and the stage on the server, and applies each change in a single guarded database update so a double click or a replayed request cannot apply it twice.
 * Not built yet: multi-factor login.
 
 ## Notifications

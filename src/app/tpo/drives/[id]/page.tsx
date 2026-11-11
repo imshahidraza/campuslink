@@ -8,6 +8,9 @@ import {
 } from "@/components/dashboard/DriveDetailControls";
 import { ApplicationReviewRow } from "@/components/dashboard/ApplicationReviewRow";
 import { SpecialConsiderationPanel } from "@/components/dashboard/SpecialConsiderationPanel";
+import { AnnounceDriveCard } from "@/components/dashboard/AnnounceDriveCard";
+import { checkEligibility } from "@/lib/rules";
+import { fmtDateTime } from "@/lib/format";
 import { stageLabel } from "@/lib/utils";
 import { FileDown } from "lucide-react";
 
@@ -30,6 +33,17 @@ export default async function TpoDriveDetail({ params }: { params: Promise<{ id:
     }),
   ]);
   if (!drive) notFound();
+
+  // Who an announcement would reach: students who meet this drive's rules (and have not joined a company).
+  const rule = {
+    minCgpa: drive.minCgpa,
+    maxBacklogs: drive.maxBacklogs,
+    eligibleBranches: drive.eligibleBranches,
+    eligibleGradYears: drive.eligibleGradYears,
+  };
+  const appliedIds = new Set(drive.applications.filter((a) => a.stage !== "WITHDRAWN").map((a) => a.studentId));
+  const eligibleStudents = allStudents.filter((s) => s.placementStatus !== "JOINED" && checkEligibility(s, rule).eligible);
+  const notAppliedCount = eligibleStudents.filter((s) => !appliedIds.has(s.id)).length;
 
   const recommended = drive.applications
     .filter((a) => a.specialConsideration)
@@ -119,6 +133,22 @@ export default async function TpoDriveDetail({ params }: { params: Promise<{ id:
         </div>
 
         <div className="space-y-5">
+          <Card className="h-fit">
+            <CardHeader>
+              <CardTitle>Announce this drive</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AnnounceDriveCard
+                driveId={drive.id}
+                open={drive.status === "OPEN"}
+                eligible={eligibleStudents.length}
+                notApplied={notAppliedCount}
+                lastAnnounced={drive.announcedAt ? fmtDateTime(drive.announcedAt) : null}
+                lastCount={drive.announcedCount}
+              />
+            </CardContent>
+          </Card>
+
           <Card className="h-fit">
             <CardHeader>
               <CardTitle>Eligibility rules</CardTitle>

@@ -1,15 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { guard } from "@/lib/actionResult";
 import { prisma } from "@/lib/prisma";
 import { getSession, assertRole, assertAnyRole } from "@/lib/auth";
 import { checkSchedulingConflicts, OFFER_PIPELINE_STAGES } from "@/lib/rules";
 import { requireApprovedRecruiter } from "@/lib/access";
 import { getDocumentsEmail } from "@/lib/college";
 import { refreshPlacementStatus } from "@/lib/placement";
-import { fmtDateTime } from "@/lib/format";
+import { fmtDate, fmtDateTime } from "@/lib/format";
 import { normalizeSlotName } from "@/lib/normalize";
 import { getAgreedWindow, TIME_RE, toMinutes } from "@/lib/schedule";
+import { readOfferTerms, formatPackage, packageText, offerTypeLabel, fmtJoining } from "@/lib/offerRules";
+import { termsData, FRESH_OFFER_STATE, CLEAR_OFFER, backToInternship } from "@/lib/offerState";
+import { addDays, DOCUMENT_DEADLINE_DAYS } from "@/lib/automationRules";
 
 async function requireTpo() {
   const session = await getSession();
@@ -161,12 +165,11 @@ function readReason(formData: FormData | string, what: string): string {
 }
 
 /** Recruiter requests an offer for a candidate they've already marked Selected. Package is fixed here — the TPO forwards it as-is, doesn't edit it. */
-export async function requestOfferAction(applicationId: string, formData: FormData) {
+async function runRequestOfferAction(applicationId: string, formData: FormData) {
   const session = await getSession();
   assertRole(session, "RECRUITER");
 
-  const offerPackage = String(formData.get("offerPackage") || "").trim().slice(0, 100);
-  if (!offerPackage) throw new Error("Please enter the package you're offering.");
+  const terms = readOfferTerms(formData);
   const offerMessage = readOfferMessage(formData);
 
   const recruiter = await requireApprovedRecruiter(session.userId);
@@ -186,7 +189,8 @@ export async function requestOfferAction(applicationId: string, formData: FormDa
     where: { id: applicationId },
     data: {
       stage: "OFFER_REQUESTED",
-      offerPackage,
+      ...FRESH_OFFER_STATE,
+      ...termsData(terms),
       offerMessage,
       offerRequestedAt: new Date(),
       // A fresh request replaces any earlier withdrawal.
@@ -199,7 +203,7 @@ export async function requestOfferAction(applicationId: string, formData: FormDa
     data: {
       type: "OFFER_UPDATE",
       title: "Offer request awaiting review",
-      message: `${application.drive.companyName} wants to offer ${application.student.rollNo} (${application.student.user.name}) ${offerPackage} for ${application.drive.jobRole}.`,
+      message: `${application.drive.companyName} wants to make ${application.student.rollNo} (${application.student.user.name}) a ${offerTypeLabel(terms.offerType)} offer (${formatPackage(terms)}) for ${application.drive.jobRole}.`,
     },
   });
 
@@ -224,7 +228,7 @@ export async function sendOfferToStudentAction(applicationId: string) {
 
   const updated = await prisma.application.update({
     where: { id: applicationId },
-    data: { stage: "OFFER_SENT", offerSentAt: new Date() },
+    data: { stage: "OFFER_SENT", offerSentAt: new Date(), offerFollowUpAt: null, offerFollowUpCount: 0 },
   });
 
   await refreshPlacementStatus(application.studentId);
@@ -234,7 +238,7 @@ export async function sendOfferToStudentAction(applicationId: string) {
       studentId: application.studentId,
       type: "OFFER_UPDATE",
       title: `You've received an offer from ${application.drive.companyName}!`,
-      message: `Package: ${application.offerPackage}. Open your Placement Journey to read the message from the company and to accept or decline.`,
+      message: `${offerTypeLabel(application.offerType)} offer. Package: ${packageText(application)}.${application.joiningDate ? ` Joining date: ${fmtJoining(application.joiningDate)}.` : ""} Open your Placement Journey to read the message from the company and to accept or decline.`,
     },
   });
 
@@ -263,10 +267,20 @@ export async function studentRespondToOfferAction(applicationId: string, respons
   }
 
   const accepted = response === "ACCEPT";
-  const updated = await prisma.application.update({
-    where: { id: applicationId },
-    data: { stage: accepted ? "OFFER_ACCEPTED" : "OFFER_DECLINED", offerRespondedAt: new Date() },
+  const now = new Date();
+  // After accepting, the student has a week to send documents (unless they were verified already, as for a conversion).
+  const dueAt = accepted && !application.documentsVerified ? addDays(now, DOCUMENT_DEADLINE_DAYS) : null;
+  // updateMany with the stage in the filter makes sure a double click or two tabs can't answer the same offer twice.
+  const changed = await prisma.application.updateMany({
+    where: { id: applicationId, studentId: student.id, stage: "OFFER_SENT" },
+    data: {
+      stage: accepted ? "OFFER_ACCEPTED" : "OFFER_DECLINED",
+      offerRespondedAt: now,
+      ...(accepted ? { documentsDueAt: dueAt, docReminderSentAt: null, docOverdueSentAt: null } : {}),
+    },
   });
+  if (changed.count === 0) throw new Error("This offer isn't awaiting your response.");
+  const updated = await prisma.application.findUniqueOrThrow({ where: { id: applicationId } });
 
   // A decline is scoped to this one drive only. The overall status is recomputed from the
   // student's other applications, so a decline never marks them unplaced if they are active elsewhere.
@@ -281,9 +295,12 @@ export async function studentRespondToOfferAction(applicationId: string, respons
             studentId: student.id,
             type: "DOCUMENT_DEADLINE",
             title: "Next step: send your documents",
-            message: docsEmail
-              ? `Please email your important documents to ${docsEmail} for verification. The placement cell will update your status once they are verified.`
-              : "Please send your important documents to the placement cell for verification. They will update your status once they are verified.",
+            message:
+              (docsEmail
+                ? `Please email your important documents to ${docsEmail} for verification.`
+                : "Please send your important documents to the placement cell for verification.") +
+              (dueAt ? ` The last date is ${fmtDate(dueAt)}.` : "") +
+              " The placement cell will update your status once they are verified.",
           },
         })
       : Promise.resolve(),
@@ -442,12 +459,10 @@ function revalidateOfferPages(driveId: string) {
 }
 
 /** Recruiter fixes the package or message of an offer request the placement cell has not forwarded yet. */
-export async function editOfferRequestAction(applicationId: string, formData: FormData) {
+async function runEditOfferRequestAction(applicationId: string, formData: FormData) {
   const session = await getSession();
   assertRole(session, "RECRUITER");
   const recruiter = await requireApprovedRecruiter(session.userId);
-  const offerPackage = String(formData.get("offerPackage") || "").trim().slice(0, 100);
-  if (!offerPackage) throw new Error("Please enter the package you're offering.");
   const offerMessage = readOfferMessage(formData);
 
   const application = await prisma.application.findUniqueOrThrow({ where: { id: applicationId }, include: { drive: true } });
@@ -455,7 +470,9 @@ export async function editOfferRequestAction(applicationId: string, formData: Fo
   if (application.stage !== "OFFER_REQUESTED") {
     throw new Error("This request has already been forwarded, so it can't be edited. You can withdraw the offer instead.");
   }
-  await prisma.application.update({ where: { id: applicationId }, data: { offerPackage, offerMessage } });
+  // A conversion stays a full-time offer; its type is not a choice.
+  const terms = readOfferTerms(formData, { forceType: application.convertedFromInternship ? "FULL_TIME" : undefined });
+  await prisma.application.update({ where: { id: applicationId }, data: { ...termsData(terms), offerMessage } });
   revalidateOfferPages(application.driveId);
 }
 
@@ -472,7 +489,9 @@ export async function cancelOfferRequestAction(applicationId: string) {
   if (application.stage !== "OFFER_REQUESTED") throw new Error("This request has already been forwarded. Withdraw the offer instead.");
   await prisma.application.update({
     where: { id: applicationId },
-    data: { stage: "SELECTED", offerPackage: null, offerMessage: null, offerRequestedAt: null },
+    data: application.convertedFromInternship
+      ? backToInternship(application.offerStipend)
+      : { stage: "SELECTED", ...CLEAR_OFFER, offerRequestedAt: null },
   });
   await refreshPlacementStatus(application.studentId);
   await prisma.tpoNotification.create({
@@ -508,16 +527,17 @@ export async function withdrawOfferAction(applicationId: string, reason: string)
 
   await prisma.application.update({
     where: { id: applicationId },
-    data: {
-      stage: "SELECTED",
-      offerPackage: null,
-      offerMessage: null,
-      offerSentAt: null,
-      offerRespondedAt: null,
-      documentsVerified: false,
-      offerWithdrawnAt: new Date(),
-      offerWithdrawnNote: note,
-    },
+    data: application.convertedFromInternship
+      ? { ...backToInternship(application.offerStipend), offerWithdrawnAt: new Date(), offerWithdrawnNote: note }
+      : {
+          stage: "SELECTED",
+          ...CLEAR_OFFER,
+          offerSentAt: null,
+          offerRespondedAt: null,
+          documentsVerified: false,
+          offerWithdrawnAt: new Date(),
+          offerWithdrawnNote: note,
+        },
   });
   await refreshPlacementStatus(application.studentId);
 
@@ -556,4 +576,14 @@ export async function markRecruiterNotificationReadAction(notificationId: string
     data: { read: true },
   });
   revalidatePath("/recruiter/notifications");
+}
+
+/** Same work as runRequestOfferAction, returned as { ok } so the form can show what to fix (a thrown message is hidden in production). */
+export async function requestOfferAction(applicationId: string, formData: FormData) {
+  return guard(() => runRequestOfferAction(applicationId, formData));
+}
+
+/** Same work as runEditOfferRequestAction, returned as { ok } so the form can show what to fix (a thrown message is hidden in production). */
+export async function editOfferRequestAction(applicationId: string, formData: FormData) {
+  return guard(() => runEditOfferRequestAction(applicationId, formData));
 }

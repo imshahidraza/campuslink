@@ -2,13 +2,20 @@ import { prisma } from "@/lib/prisma";
 import { Badge, Card, CardContent } from "@/components/ui/Card";
 import { RecruiterApprovalButtons } from "@/components/dashboard/RecruiterApprovalButtons";
 import { fmtDate } from "@/lib/format";
+import { SafeLink } from "@/components/ui/SafeLink";
+import { KeyPeopleStrip } from "@/components/dashboard/KeyPeopleStrip";
+import { keyPersonSelect, toKeyPersonView, MAX_KEY_PEOPLE } from "@/lib/keyPeopleShared";
 
 const statusTone = { PENDING: "warning", APPROVED: "success", DECLINED: "danger" } as const;
 const statusText = { PENDING: "Waiting for approval", APPROVED: "Approved", DECLINED: "Declined" } as const;
 
 export default async function RecruitersPage() {
   const recruiters = await prisma.recruiter.findMany({
-    include: { user: { select: { name: true, email: true, phone: true } }, _count: { select: { drives: true } } },
+    include: {
+      user: { select: { name: true, email: true, phone: true } },
+      _count: { select: { drives: true } },
+      keyPeople: { orderBy: { position: "asc" }, take: MAX_KEY_PEOPLE, select: keyPersonSelect },
+    },
     orderBy: [{ createdAt: "desc" }],
     take: 200,
   });
@@ -39,10 +46,17 @@ export default async function RecruitersPage() {
                   {statusText[r.status]}
                 </Badge>
               </div>
+              {r.website && (
+                <p className="text-xs mt-2">
+                  <SafeLink href={r.website} />
+                </p>
+              )}
               {r.companyDesc && <p className="text-sm text-muted mt-3 leading-relaxed">{r.companyDesc}</p>}
+              <KeyPeopleStrip people={r.keyPeople.map(toKeyPersonView)} className="mt-4" />
               <div className="mt-3 space-y-1 text-xs text-muted">
                 <p>
-                  {r.user.name} · {r.user.email}
+                  {r.user.name}
+                  {r.contactRole ? `, ${r.contactRole}` : ""} · {r.user.email}
                 </p>
                 {r.user.phone && <p>{r.user.phone}</p>}
                 <p>

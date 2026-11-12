@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/Button";
 import { AiWaitNote } from "@/components/ui/Loader";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Sparkles, MapPin, Calendar, Lock, Award, Clock } from "lucide-react";
+import { SafeLink } from "@/components/ui/SafeLink";
+import { KeyPeopleStrip } from "./KeyPeopleStrip";
+import type { KeyPersonView } from "@/lib/keyPeopleShared";
 
 interface ExistingApp {
   fitScore: number | null;
@@ -20,6 +23,7 @@ interface ExistingApp {
 
 export function StudentDriveCard({
   drive,
+  company,
   eligible,
   ineligibleReasons,
   ineligibleFixes,
@@ -40,6 +44,7 @@ export function StudentDriveCard({
     status: string;
     applyDeadline: string | null;
   };
+  company?: { industry: string | null; website: string | null; about: string | null; people: KeyPersonView[] } | null;
   eligible: boolean;
   ineligibleReasons: string[];
   ineligibleFixes?: { problem: string; fix: string }[];
@@ -124,6 +129,26 @@ export function StudentDriveCard({
       </CardHeader>
       <CardContent>
         {drive.jdSummary && <p className="text-sm text-muted leading-relaxed">{drive.jdSummary}</p>}
+
+        {company && (company.industry || company.website || company.about || company.people.length > 0) && (
+          <details className="mt-3 rounded-xl border border-border-soft bg-surface px-4 py-2.5 group">
+            <summary className="cursor-pointer text-sm font-medium text-ink list-none flex items-center justify-between">
+              About {drive.companyName}
+              <span className="text-xs text-muted group-open:hidden">Show</span>
+              <span className="text-xs text-muted hidden group-open:inline">Hide</span>
+            </summary>
+            <div className="mt-3 pb-1 space-y-3">
+              {company.industry && <p className="text-xs text-muted">{company.industry}</p>}
+              {company.website && (
+                <p className="text-xs">
+                  <SafeLink href={company.website} />
+                </p>
+              )}
+              {company.about && <p className="text-sm text-muted leading-relaxed whitespace-pre-line">{company.about}</p>}
+              <KeyPeopleStrip people={company.people} />
+            </div>
+          </details>
+        )}
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           {drive.jdRequiredSkills.slice(0, 6).map((s) => (

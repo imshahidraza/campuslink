@@ -5,6 +5,7 @@ import { LinkButton } from "@/components/ui/Button";
 import { readinessLabel, stageLabel } from "@/lib/utils";
 import { Gauge, Briefcase, Bell, ArrowUpRight } from "lucide-react";
 import { fmtDate } from "@/lib/format";
+import { WelcomeBanner } from "@/components/dashboard/WelcomeBanner";
 
 export default async function StudentOverview() {
   const { session, student: studentBase } = await requireStudentOrRedirect();
@@ -20,8 +21,7 @@ export default async function StudentOverview() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-ink">Welcome, {session.name.split(" ")[0]}</h1>
-      <p className="text-muted text-sm mt-1">Here&apos;s where your placement journey stands.</p>
+      <WelcomeBanner role="STUDENT" name={session.name} />
 
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card>

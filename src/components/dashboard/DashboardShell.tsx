@@ -19,6 +19,7 @@ import {
   Award,
   BarChart3,
   GraduationCap,
+  UserCog,
 } from "lucide-react";
 import { OllamaStatus } from "./OllamaStatus";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -50,6 +51,7 @@ const NAV_CONFIG: Record<
   ],
   recruiter: [
     { label: "Overview", href: "/recruiter", icon: LayoutDashboard },
+    { label: "Profile setup", href: "/recruiter/profile-setup", icon: UserCog },
     { label: "Company Profile", href: "/recruiter/profile", icon: Building2 },
     { label: "My Drives", href: "/recruiter/drives", icon: Briefcase },
     { label: "Candidates", href: "/recruiter/candidates", icon: Users },
@@ -84,6 +86,8 @@ export function DashboardShell({
   const router = useRouter();
   const navItems = NAV_CONFIG[role];
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Desktop: the three-line button hides or shows the left menu. It stays as chosen while moving between pages.
+  const [desktopOpen, setDesktopOpen] = useState(true);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -181,11 +185,34 @@ export function DashboardShell({
           </div>
         )}
 
-        {/* Desktop sidebar */}
-        <aside className="hidden md:flex w-64 shrink-0 bg-brand-950 flex-col sticky top-0 self-start h-dvh">{sidebarContent}</aside>
+        {/* Desktop sidebar. Closed = zero width and not reachable by keyboard (inert). */}
+        <aside
+          id="desktop-sidebar"
+          inert={!desktopOpen}
+          className={cn(
+            "hidden md:block shrink-0 bg-brand-950 sticky top-0 self-start h-dvh overflow-hidden transition-[width] duration-200 ease-out",
+            desktopOpen ? "w-64" : "w-0"
+          )}
+        >
+          <div className="w-64 h-full flex flex-col">{sidebarContent}</div>
+        </aside>
 
         <main className="flex-1 min-w-0">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+          {/* Desktop menu button: always visible at the top-left of the page, even after scrolling. */}
+          <div className="hidden md:block sticky top-0 z-30 h-0">
+            <button
+              type="button"
+              onClick={() => setDesktopOpen((v) => !v)}
+              aria-label={desktopOpen ? "Close menu" : "Open menu"}
+              aria-expanded={desktopOpen}
+              aria-controls="desktop-sidebar"
+              title={desktopOpen ? "Close menu" : "Open menu"}
+              className="absolute left-4 top-3 h-10 w-10 rounded-xl border border-border-soft bg-white text-ink shadow-sm flex items-center justify-center hover:bg-surface-2 transition-colors"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 md:pt-16">
             <ScrollReveal />
             {children}
           </div>

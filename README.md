@@ -88,6 +88,31 @@ Offers originate with the **recruiter**:
 
 Stages: Applied → Shortlisted → Interview → Selected → Offer requested → Offer sent → Offer accepted → Joined. Side branches: Not selected, Offer declined, Withdrawn.
 
+## Recruiter profile and key people
+
+* **Profile setup** (Recruiter -> Profile setup): the recruiter's name and role, and the company's name, industry, website and about. The company name appears in the greeting on their Overview.
+* **Company Profile** (Recruiter -> Company Profile): up to **3 key people** (for example CEO, HR head, CFO), each with a photo, role, name and a LinkedIn or profile link.
+* The placement cell sees key people on **Recruiters**. Students see them on **Drives & Matching** (under "About the company") only after the placement cell has approved that recruiter.
+* Links are blue, underlined and open in a new tab. Only plain http/https addresses are accepted, so `javascript:` and similar can never become a link.
+* Photos must be JPG, PNG or WebP, up to 2 MB. The file's real bytes are checked (not its name), SVG is refused, and each photo is served only to people allowed to see it.
+
+### Upgrading an existing database for this feature
+
+It adds one optional column and two new tables. Nothing existing is changed.
+
+```bash
+pg_dump "$DATABASE_URL" > backup.sql        # back up first
+npx prisma db execute --file prisma/upgrade/finals-updates.sql --schema prisma/schema.prisma
+npx prisma generate
+```
+
+Safe to run twice. After this, do not run `prisma migrate dev` or `npm run db:reset` on that database.
+
+## Menu and greeting
+
+* Every portal has a three-line button at the top-left that closes and opens the left menu.
+* Each Overview starts with "Good morning / afternoon / evening" (Indian time), then the name (company, student or college), then a short warm sentence that changes at every sign-in and always ends with "Welcome to C-Link."
+
 ## AI features
 
 All AI runs locally through Ollama (Gemma), one request at a time, with the model kept loaded for 30 minutes. A fit check can take up to a minute.

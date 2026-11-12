@@ -2,6 +2,7 @@ import { requireStudentOrRedirect } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkEligibility, eligibilityFixes } from "@/lib/rules";
 import { StudentDriveCard } from "@/components/dashboard/StudentDriveCard";
+import { keyPersonSelect, toKeyPersonView, MAX_KEY_PEOPLE } from "@/lib/keyPeopleShared";
 
 export default async function DrivesPage() {
   const { student: studentBase } = await requireStudentOrRedirect();
@@ -19,6 +20,17 @@ export default async function DrivesPage() {
   const openDrives = await prisma.drive.findMany({
     where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
     orderBy: { createdAt: "desc" },
+    include: {
+      recruiter: {
+        select: {
+          status: true,
+          industry: true,
+          website: true,
+          companyDesc: true,
+          keyPeople: { orderBy: { position: "asc" }, take: MAX_KEY_PEOPLE, select: keyPersonSelect },
+        },
+      },
+    },
   });
 
   const drivesWithEligibility = openDrives.map((d) => {
@@ -71,6 +83,17 @@ export default async function DrivesPage() {
                 status: drive.status,
                 applyDeadline: drive.applyDeadline ? drive.applyDeadline.toISOString() : null,
               }}
+              company={
+                // Students see a company's profile and key people only after the placement cell approved the recruiter.
+                drive.recruiter.status === "APPROVED"
+                  ? {
+                      industry: drive.recruiter.industry,
+                      website: drive.recruiter.website,
+                      about: drive.recruiter.companyDesc,
+                      people: drive.recruiter.keyPeople.map(toKeyPersonView),
+                    }
+                  : null
+              }
               eligible={eligibility.eligible || Boolean(app?.specialConsideration)}
               ineligibleReasons={eligibility.reasons}
               ineligibleFixes={fixes}

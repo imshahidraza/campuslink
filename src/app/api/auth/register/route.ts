@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { setSessionCookie } from "@/lib/auth";
+import { setWelcomeCookie } from "@/lib/welcome";
 import { checkRateLimit, clientKey } from "@/lib/rateLimit";
 import { safeErrorMessage } from "@/lib/safeError";
 import { normalizePhone } from "@/lib/phone";
@@ -196,6 +197,7 @@ export async function POST(req: NextRequest) {
     });
 
     await setSessionCookie({ userId: user.id, role: user.role, email: user.email, name: user.name });
+    await setWelcomeCookie();
     const redirectPath = user.role === "STUDENT" ? "/student" : user.role === "TPO" ? "/tpo" : "/recruiter";
     return NextResponse.json({ ok: true, redirectPath });
   } catch (err) {

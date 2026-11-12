@@ -203,14 +203,47 @@ model Recruiter {
   companyDesc String?
   website     String?
   industry    String?
+  contactRole String? // the recruiter's own job title, e.g. "HR Manager"
 
   // New recruiters wait for the TPO to approve them before they can create drives.
   status RecruiterStatus @default(PENDING)
 
   drives        Drive[]
   notifications RecruiterNotification[]
+  keyPeople     KeyPerson[]
 
   createdAt DateTime @default(now())
+}
+
+/// Up to three people a recruiter showcases on their company profile (CEO, HR, CFO ...).
+/// position is 0, 1 or 2. The photo lives in its own table so list queries never pull image bytes.
+model KeyPerson {
+  id          String    @id @default(cuid())
+  recruiterId String
+  recruiter   Recruiter @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+
+  position   Int
+  role       String
+  name       String
+  profileUrl String? // LinkedIn or any web profile link (http/https only, checked on save)
+  photo      KeyPersonPhoto?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([recruiterId, position])
+}
+
+/// The photo of a key person (JPEG, PNG or WebP). Served only by /api/key-people/[id]/photo,
+/// which checks who is asking.
+model KeyPersonPhoto {
+  id          String    @id @default(cuid())
+  keyPersonId String    @unique
+  keyPerson   KeyPerson @relation(fields: [keyPersonId], references: [id], onDelete: Cascade)
+  mimeType    String
+  size        Int
+  data        Bytes
+  uploadedAt  DateTime  @default(now())
 }
 
 model Drive {

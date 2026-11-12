@@ -103,3 +103,25 @@ export async function saveScreeningAnswersAction(driveId: string, answers: unkno
 export async function submitScreeningAction(driveId: string, answers: unknown) {
   return guard(() => runSubmit(driveId, answers));
 }
+
+/**
+ * The test page tells the server each time the student leaves it (another tab or window). The server adds one and
+ * keeps the number, so it can't be edited on the page. Nothing happens automatically because of it: the recruiter
+ * sees the count next to the result and decides.
+ */
+async function runLeave(driveId: string) {
+  const { session, application } = await loadMine(driveId);
+  if (!checkRateLimit(`screening-leave:${session.userId}`, 200, 10 * 60_000).allowed) throw new Error("Too many requests.");
+  const attempt = application.screeningAttempt;
+  if (!attempt || attempt.submittedAt || Date.now() > attempt.deadlineAt.getTime() + GRACE_MS) return { count: 0 };
+  await prisma.screeningAttempt.updateMany({
+    where: { id: attempt.id, submittedAt: null },
+    data: { leaveCount: { increment: 1 } },
+  });
+  const now = await prisma.screeningAttempt.findUnique({ where: { id: attempt.id }, select: { leaveCount: true } });
+  return { count: now?.leaveCount ?? 0 };
+}
+
+export async function reportScreeningLeaveAction(driveId: string) {
+  return guard(() => runLeave(driveId));
+}

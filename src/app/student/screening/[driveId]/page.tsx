@@ -70,6 +70,10 @@ export default async function StudentScreeningPage({ params }: { params: Promise
               <li>You can take it once. Your answers are saved as you go and submitted when the time ends.</li>
               <li>Every student of this drive gets the same questions, in a different order.</li>
               <li>
+                Stay on this page while you take it. If you switch to another tab or window, it is counted and the recruiter
+                can see how many times it happened.
+              </li>
+              <li>
                 The recruiter of this drive reads your answers. The AI may write comments on your written answers to help
                 them, but a person makes every decision.
               </li>
@@ -89,6 +93,7 @@ export default async function StudentScreeningPage({ params }: { params: Promise
           remainingMs={msLeft(attempt.deadlineAt)}
           questions={presentQuestions(drive.screeningQuestions, attempt.seed)}
           initialAnswers={cleanAnswers(attempt.answers, drive.screeningQuestions)}
+          initialLeaves={attempt.leaveCount}
         />
       )}
 

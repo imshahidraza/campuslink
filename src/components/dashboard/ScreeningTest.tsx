@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/Card";
 import { useToast } from "@/components/ui/Toast";
-import { startScreeningAction, saveScreeningAnswersAction, submitScreeningAction } from "@/lib/actions/screeningStudent";
+import {
+  startScreeningAction,
+  saveScreeningAnswersAction,
+  submitScreeningAction,
+  reportScreeningLeaveAction,
+} from "@/lib/actions/screeningStudent";
 import { SHORT_ANSWER_MAX, type PresentedQuestion, type Answers } from "@/lib/screening";
 
 export function ScreeningStart({ driveId, minutes }: { driveId: string; minutes: number }) {
@@ -40,11 +45,13 @@ export function ScreeningTest({
   remainingMs,
   questions,
   initialAnswers,
+  initialLeaves,
 }: {
   driveId: string;
   remainingMs: number;
   questions: PresentedQuestion[];
   initialAnswers: Answers;
+  initialLeaves: number;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -57,6 +64,9 @@ export function ScreeningTest({
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const dirty = useRef(false);
+  const [leaves, setLeaves] = useState(initialLeaves);
+  const [justBack, setJustBack] = useState(false);
+  const away = useRef(false);
 
   async function submit() {
     if (submittingRef.current) return;
@@ -85,6 +95,33 @@ export function ScreeningTest({
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endAt]);
+
+  // Notices when the student leaves this page (another tab, another window, minimising). One leave is counted once,
+  // however many events the browser fires, and again only after the student has come back. The server keeps the count.
+  useEffect(() => {
+    function gone() {
+      if (away.current || submittingRef.current) return;
+      away.current = true;
+      setLeaves((n) => n + 1);
+      void reportScreeningLeaveAction(driveId).then((r) => {
+        if (r.ok && r.data.count > 0) setLeaves(r.data.count);
+      });
+    }
+    function back() {
+      if (!away.current) return;
+      away.current = false;
+      setJustBack(true);
+    }
+    const onVisibility = () => (document.hidden ? gone() : back());
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", gone);
+    window.addEventListener("focus", back);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", gone);
+      window.removeEventListener("focus", back);
+    };
+  }, [driveId]);
 
   // Saves shortly after the student stops typing or clicking.
   useEffect(() => {
@@ -124,6 +161,14 @@ export function ScreeningTest({
           {urgent && "Hurry. "}Time left {clock(left)}
         </p>
       </div>
+
+      {(justBack || leaves > 0) && (
+        <div role="alert" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 leading-relaxed">
+          {justBack ? "You left the test page. " : ""}
+          This is recorded: you have left the page {leaves} time{leaves === 1 ? "" : "s"} so far, and the recruiter can see it. Please
+          stay on this page until you submit.
+        </div>
+      )}
 
       <ol className="space-y-5">
         {questions.map((q, i) => (

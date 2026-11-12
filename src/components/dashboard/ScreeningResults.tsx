@@ -23,6 +23,7 @@ export interface ResultRow {
   total: number | null;
   submittedAt: string | null;
   hasComments: boolean;
+  leaveCount: number;
 }
 
 type SortKey = "high" | "low" | "name";
@@ -158,6 +159,11 @@ function ResultItem({ row, driveId }: { row: ResultRow; driveId: string }) {
         <div className="flex items-center gap-3">
           {row.state === "SUBMITTED" ? (
             <>
+              {row.leaveCount > 0 && (
+                <Badge tone="warning">
+                  Left the page {row.leaveCount} time{row.leaveCount === 1 ? "" : "s"}
+                </Badge>
+              )}
               <span className="text-sm font-semibold text-ink whitespace-nowrap">
                 {row.correct ?? 0} / {row.total ?? 0} correct
               </span>

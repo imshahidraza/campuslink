@@ -336,6 +336,7 @@ model ScreeningAttempt {
   deadlineAt    DateTime
   submittedAt   DateTime?
   autoSubmitted Boolean   @default(false)
+  leaveCount    Int       @default(0) // how many times the student left the test page (tab switch, other window). Counted on the server.
   seed          Int // decides this student's question and option order
   answers       Json // { questionId: optionIndex | "written text" }
   mcqCorrect    Int?

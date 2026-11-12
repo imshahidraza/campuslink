@@ -28,7 +28,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
       applications: {
         include: {
           student: { include: { user: true, resume: { select: { id: true } } } },
-          screeningAttempt: { select: { submittedAt: true, mcqCorrect: true, mcqTotal: true, feedbackAt: true } },
+          screeningAttempt: { select: { submittedAt: true, mcqCorrect: true, mcqTotal: true, feedbackAt: true, leaveCount: true } },
         },
         orderBy: { fitScore: "desc" },
       },
@@ -65,6 +65,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
       total: a.screeningAttempt?.mcqTotal ?? null,
       submittedAt: a.screeningAttempt?.submittedAt ? a.screeningAttempt.submittedAt.toISOString() : null,
       hasComments: Boolean(a.screeningAttempt?.feedbackAt),
+      leaveCount: a.screeningAttempt?.leaveCount ?? 0,
     }));
   const [scheduleRequest, window] = await Promise.all([
     prisma.scheduleRequest.findUnique({ where: { driveId: drive.id } }),

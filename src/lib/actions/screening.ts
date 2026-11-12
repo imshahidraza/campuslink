@@ -310,6 +310,8 @@ async function writeComments(applicationId: string, jobRole: string) {
   });
   if (toAsk.length > 0) {
     const comments = await commentOnWrittenAnswers({ jobRole, items: toAsk.map((t) => ({ n: t.n, question: t.question, lookFor: t.lookFor, answer: t.answer })) });
+    // If the AI wrote nothing at all, nothing is saved, so the recruiter can simply try again later.
+    if (comments.size === 0) throw new Error("The AI could not write comments just now. Please try again in a minute.");
     for (const t of toAsk) feedback.push({ questionId: t.id, comment: comments.get(t.n) ?? "The AI did not write a comment for this answer. Please read it yourself." });
   }
   await prisma.screeningAttempt.update({ where: { id: attempt.id }, data: { feedback: feedback as unknown as Prisma.InputJsonValue, feedbackAt: new Date() } });

@@ -217,10 +217,10 @@ function ResultItem({ row, driveId }: { row: ResultRow; driveId: string }) {
                   )}
                 </div>
               ))}
-              {detail.questions.some((q) => q.kind === "SHORT") && !detail.hasComments && (
+              {detail.questions.some((q) => q.kind === "SHORT") && (
                 <div className="flex flex-wrap items-center gap-3">
                   <Button size="sm" variant="secondary" onClick={comments} disabled={isPending}>
-                    Get AI comments on the written answers
+                    {detail.hasComments ? "Write the AI comments again" : "Get AI comments on the written answers"}
                   </Button>
                   <AiWaitNote show={isPending} />
                 </div>

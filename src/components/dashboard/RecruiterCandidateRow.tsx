@@ -17,10 +17,13 @@ import { Award } from "lucide-react";
 import { RejectWithFeedback } from "./RejectWithFeedback";
 import { ViewResumeLink } from "./ViewResumeLink";
 import { ScheduleInterviewForm, type ConfirmedWindow } from "./ScheduleInterviewForm";
+import type { AttemptState } from "@/lib/screening";
 
 interface Props {
   /** The interview window agreed with the placement cell, or null until it is confirmed. */
   window: ConfirmedWindow | null;
+  /** The drive's screening interview, if it has one: whether this student has finished it, and the score. */
+  screening?: { required: boolean; state: AttemptState; correct: number | null; total: number | null };
   application: {
     id: string;
     driveId: string;
@@ -63,7 +66,7 @@ const stageTone: Record<string, "neutral" | "brand" | "success" | "warning" | "d
 };
 
 /** What the recruiter can do at each stage. Request Offer appears once a candidate is selected. */
-export function RecruiterCandidateRow({ application, window }: Props) {
+export function RecruiterCandidateRow({ application, window, screening }: Props) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
@@ -106,6 +109,8 @@ export function RecruiterCandidateRow({ application, window }: Props) {
       : journeyLabel(stage, Boolean(application.documentsVerified));
 
   const canDecide = ["ELIGIBLE", "SHORTLISTED", "INTERVIEW", "SELECTED"].includes(stage);
+  // The server refuses to shortlist a student who hasn't finished the interview; the button says so up front.
+  const waitingForScreening = Boolean(screening?.required) && screening?.state !== "SUBMITTED";
 
   return (
     <div className="border-b border-border-soft py-4 last:border-0">
@@ -170,7 +175,12 @@ export function RecruiterCandidateRow({ application, window }: Props) {
       {canDecide && stage !== "SELECTED" && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {stage === "ELIGIBLE" && (
-            <Button size="sm" variant="secondary" disabled={isPending} onClick={() => move("SHORTLISTED", `${name} shortlisted.`)}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={isPending || waitingForScreening}
+              onClick={() => move("SHORTLISTED", `${name} shortlisted.`)}
+            >
               Shortlist
             </Button>
           )}
@@ -188,6 +198,16 @@ export function RecruiterCandidateRow({ application, window }: Props) {
             Not selected
           </Button>
         </div>
+      )}
+
+      {screening?.required && stage === "ELIGIBLE" && (
+        <p className="mt-2 text-xs text-muted">
+          {screening.state === "SUBMITTED"
+            ? `Screening interview done: ${screening.correct ?? 0} of ${screening.total ?? 0} multiple-choice answers correct.`
+            : screening.state === "IN_PROGRESS"
+              ? "Screening interview: the student has started but not finished. You can shortlist once it is done."
+              : "Screening interview: not started. You can shortlist once the student finishes it."}
+        </p>
       )}
 
       {!window && (stage === "SHORTLISTED" || stage === "INTERVIEW") && (

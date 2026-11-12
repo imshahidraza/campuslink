@@ -142,3 +142,14 @@ Students, recruiters and the TPO each get in-app notifications for the events th
 * This build is **single-college**: one shared roster, no separate data per college.
 * "Specialization" is the term on screen. The database field is still called `branch`.
 * Reset a user's password from the command line with `npm run reset-password`.
+
+## Screening interview (text)
+
+Every drive can have a short text interview: 4 to 5 multiple-choice questions and up to 2 written ones, the same for every student.
+
+- **Recruiter:** on the drive page, the AI drafts the questions from the job description. The recruiter reads, edits or removes them, sets the time limit (5 to 60 minutes) and an optional minimum score, then approves. Published questions can't be changed.
+- **Student:** after applying, the student takes it once on `/student/screening/<driveId>`. The order of questions and options is shuffled per student, the time limit is counted on the server, answers are saved as they go, and an attempt whose time runs out is submitted with what was saved.
+- **Scoring:** the multiple-choice score is counted by code. The AI only writes short comments on the written answers, as advice for the recruiter. It never gives marks.
+- **Shortlisting:** a recruiter can shortlist only a student who has finished the interview. The server enforces this.
+- **Results:** the recruiter sees a sortable score (no rank numbers), a separate "Below your minimum" list (nobody is removed), and each student's answers. The placement cell sees only how many have finished.
+- **Upgrading an existing database:** run `prisma/upgrade/screening-step1.sql` and then `prisma/upgrade/screening-step2.sql` with `npx prisma db execute --file <file> --schema prisma/schema.prisma`. Both only add things and are safe to run twice.

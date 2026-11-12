@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui
 import { LinkButton } from "@/components/ui/Button";
 import { DriveStatusControl, BulkMatchButton } from "@/components/dashboard/DriveDetailControls";
 import { ScreeningCard } from "@/components/dashboard/ScreeningCard";
+import { ScreeningResults, type ResultRow } from "@/components/dashboard/ScreeningResults";
+import { settleDrive } from "@/lib/screeningAttempt";
+import type { AttemptState } from "@/lib/screening";
 import { RecruiterCandidateRow } from "@/components/dashboard/RecruiterCandidateRow";
 import { AutoScheduleForm } from "@/components/dashboard/AutoScheduleForm";
 import { ScheduleRequestCard } from "@/components/dashboard/ScheduleRequestCard";
@@ -17,11 +20,16 @@ import { placementCellLabel } from "@/lib/college";
 export default async function RecruiterDriveDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { recruiter } = await requireRecruiterOrRedirect();
+  // Students whose time ran out are finished with their saved answers before the results are drawn.
+  await settleDrive(id);
   const drive = await prisma.drive.findUnique({
     where: { id },
     include: {
       applications: {
-        include: { student: { include: { user: true, resume: { select: { id: true } } } } },
+        include: {
+          student: { include: { user: true, resume: { select: { id: true } } } },
+          screeningAttempt: { select: { submittedAt: true, mcqCorrect: true, mcqTotal: true, feedbackAt: true } },
+        },
         orderBy: { fitScore: "desc" },
       },
       screeningQuestions: { orderBy: { position: "asc" } },
@@ -37,6 +45,27 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
   const shortlisted = active.filter((a) => a.stage === "SHORTLISTED").length;
   const cell = await placementCellLabel();
   const approved = recruiter.status === "APPROVED";
+  const screeningOn = drive.screeningStatus === "PUBLISHED";
+  const stateOf = (a: (typeof active)[number]): AttemptState =>
+    !a.screeningAttempt ? "NOT_STARTED" : a.screeningAttempt.submittedAt ? "SUBMITTED" : "IN_PROGRESS";
+  const screeningFor = (a: (typeof active)[number]) => ({
+    required: screeningOn,
+    state: stateOf(a),
+    correct: a.screeningAttempt?.mcqCorrect ?? null,
+    total: a.screeningAttempt?.mcqTotal ?? null,
+  });
+  const resultRows: ResultRow[] = active
+    .filter((a) => ["ELIGIBLE", "SHORTLISTED", "INTERVIEW", "SELECTED"].includes(a.stage) || a.screeningAttempt)
+    .map((a) => ({
+      applicationId: a.id,
+      name: a.student.user.name,
+      rollNo: a.student.rollNo,
+      state: stateOf(a),
+      correct: a.screeningAttempt?.mcqCorrect ?? null,
+      total: a.screeningAttempt?.mcqTotal ?? null,
+      submittedAt: a.screeningAttempt?.submittedAt ? a.screeningAttempt.submittedAt.toISOString() : null,
+      hasComments: Boolean(a.screeningAttempt?.feedbackAt),
+    }));
   const [scheduleRequest, window] = await Promise.all([
     prisma.scheduleRequest.findUnique({ where: { driveId: drive.id } }),
     getAgreedWindow(drive.id),
@@ -103,7 +132,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
                   worth a look based on their profile. The decision is yours.
                 </p>
                 {recommended.map((app) => (
-                  <RecruiterCandidateRow key={app.id} application={app} window={window} />
+                  <RecruiterCandidateRow key={app.id} application={app} window={window} screening={screeningFor(app)} />
                 ))}
               </CardContent>
             </Card>
@@ -119,6 +148,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
                   driveId={drive.id}
                   status={drive.screeningStatus}
                   minutes={drive.screeningMinutes}
+                  minScore={drive.screeningMinScore}
                   questions={drive.screeningQuestions.map((q) => ({
                     id: q.id,
                     position: q.position,
@@ -129,6 +159,17 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
                     lookFor: q.lookFor,
                   }))}
                 />
+              </CardContent>
+            </Card>
+          )}
+
+          {approved && screeningOn && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Screening results</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3">
+                <ScreeningResults driveId={drive.id} rows={resultRows} minScore={drive.screeningMinScore} />
               </CardContent>
             </Card>
           )}
@@ -148,7 +189,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
                 </p>
               )}
               {others.map((app) => (
-                <RecruiterCandidateRow key={app.id} application={app} window={window} />
+                <RecruiterCandidateRow key={app.id} application={app} window={window} screening={screeningFor(app)} />
               ))}
               {withdrawn > 0 && (
                 <p className="text-xs text-muted mt-3">

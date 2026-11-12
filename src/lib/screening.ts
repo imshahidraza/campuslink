@@ -121,3 +121,130 @@ export function checkPublishable(questions: DraftQuestion[]): { ok: boolean; mes
   }
   return { ok: true, message: "" };
 }
+
+/* ---------- Settings and editing (recruiter) ---------- */
+
+export const MIN_MINUTES = 5;
+export const MAX_MINUTES = 60;
+export const SHORT_ANSWER_MAX = 1500;
+
+/** Checks a recruiter's edit of one question. Same rules as the AI's draft. Returns the clean question or a message. */
+export function cleanQuestionEdit(
+  kind: QuestionKindName,
+  input: { prompt?: unknown; options?: unknown; correctIndex?: unknown; lookFor?: unknown }
+): { ok: true; question: DraftQuestion } | { ok: false; message: string } {
+  const prompt = plain(input.prompt, 10, 300);
+  if (!prompt) return { ok: false, message: "The question must be 10 to 300 characters, with no links or markup." };
+  if (kind === "SHORT") {
+    const raw = typeof input.lookFor === "string" ? input.lookFor.trim() : "";
+    const lookFor = raw ? plain(raw, 10, 300) : "";
+    if (raw && !lookFor) return { ok: false, message: "'A good answer covers' must be 10 to 300 characters, with no links or markup." };
+    return { ok: true, question: { kind, prompt, options: [], correctIndex: null, lookFor: lookFor || null } };
+  }
+  const opts = Array.isArray(input.options) ? input.options : [];
+  const options = opts.map((o) => plain(o, 1, 150));
+  if (options.length !== OPTIONS_PER_MCQ || options.some((o) => !o)) {
+    return { ok: false, message: "Each multiple-choice question needs exactly 4 options of 1 to 150 characters, with no links or markup." };
+  }
+  if (new Set(options.map((o) => o.toLowerCase())).size !== OPTIONS_PER_MCQ) {
+    return { ok: false, message: "The four options must all be different." };
+  }
+  if (options.some((o) => /^(all|none) of the above$/i.test(o))) {
+    return { ok: false, message: "Please don't use 'all of the above' or 'none of the above'." };
+  }
+  const ci = input.correctIndex;
+  if (typeof ci !== "number" || !Number.isInteger(ci) || ci < 0 || ci >= OPTIONS_PER_MCQ) {
+    return { ok: false, message: "Mark which option is the correct answer." };
+  }
+  return { ok: true, question: { kind, prompt, options, correctIndex: ci, lookFor: null } };
+}
+
+/* ---------- The student's side: order, answers, score ---------- */
+
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** The same seed always gives the same order, so a page reload shows the student the same screen. */
+export function seededShuffle<T>(items: T[], seed: number): T[] {
+  const rand = mulberry32(seed);
+  const a = items.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** What a student is shown: no right answers. `i` is the option's stored index, which is what the student sends back. */
+export interface PresentedQuestion {
+  id: string;
+  kind: QuestionKindName;
+  prompt: string;
+  options: { i: number; text: string }[];
+}
+
+/** Multiple-choice questions first, then written ones. Question order and option order are shuffled per student. */
+export function presentQuestions(
+  questions: { id: string; kind: QuestionKindName; prompt: string; options: string[] }[],
+  seed: number
+): PresentedQuestion[] {
+  const mcq = seededShuffle(questions.filter((q) => q.kind === "MCQ"), seed);
+  const short = seededShuffle(questions.filter((q) => q.kind === "SHORT"), seed + 1);
+  return [...mcq, ...short].map((q) => ({
+    id: q.id,
+    kind: q.kind,
+    prompt: q.prompt,
+    options:
+      q.kind === "MCQ"
+        ? seededShuffle(q.options.map((text, i) => ({ i, text })), seed ^ hashString(q.id))
+        : [],
+  }));
+}
+
+export type Answers = Record<string, number | string>;
+
+/** Keeps only answers to real questions, in the right shape and size. Anything else is dropped. */
+export function cleanAnswers(raw: unknown, questions: { id: string; kind: QuestionKindName; options: string[] }[]): Answers {
+  const src = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const out: Answers = {};
+  for (const q of questions) {
+    const v = Object.prototype.hasOwnProperty.call(src, q.id) ? src[q.id] : undefined;
+    if (q.kind === "MCQ") {
+      if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v < q.options.length) out[q.id] = v;
+    } else if (typeof v === "string") {
+      const t = v.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g, "").trim().slice(0, SHORT_ANSWER_MAX);
+      if (t) out[q.id] = t;
+    }
+  }
+  return out;
+}
+
+/** The multiple-choice score, counted by code: one mark for each right answer. Blank counts as wrong. */
+export function scoreMcq(
+  questions: { id: string; kind: QuestionKindName; correctIndex: number | null }[],
+  answers: Answers
+): { correct: number; total: number } {
+  const mcq = questions.filter((q) => q.kind === "MCQ");
+  const correct = mcq.filter((q) => q.correctIndex !== null && answers[q.id] === q.correctIndex).length;
+  return { correct, total: mcq.length };
+}
+
+/** Where a student's attempt stands, from the recruiter's and the student's point of view. */
+export type AttemptState = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED";

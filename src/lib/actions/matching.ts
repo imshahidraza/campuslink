@@ -8,6 +8,7 @@ import { checkEligibility, OFFER_PIPELINE_STAGES } from "@/lib/rules";
 import { assertCanManageDrive } from "@/lib/access";
 import { placementCellLabel } from "@/lib/college";
 import { refreshPlacementStatus } from "@/lib/placement";
+import { settleApplication } from "@/lib/screeningAttempt";
 import type { Student } from "@prisma/client";
 
 function projectsToText(student: Student): string {
@@ -162,7 +163,7 @@ export async function updateApplicationStageAction(applicationId: string, stage:
   assertAnyRole(session, ["TPO", "RECRUITER"]);
   const existing = await prisma.application.findUniqueOrThrow({
     where: { id: applicationId },
-    select: { stage: true, drive: { select: { recruiterId: true } } },
+    select: { stage: true, drive: { select: { recruiterId: true, screeningStatus: true } } },
   });
   // Recruiters may only act on applications for their own drives (IDOR guard).
   await assertCanManageDrive(session, existing.drive.recruiterId);
@@ -175,6 +176,16 @@ export async function updateApplicationStageAction(applicationId: string, stage:
   }
   if (session.role === "RECRUITER" && !(RECRUITER_NEXT[existing.stage] ?? []).includes(stage)) {
     throw new Error(`A candidate who is "${existing.stage.toLowerCase()}" can't be moved to "${stage.toLowerCase()}" from here.`);
+  }
+
+  // A recruiter can shortlist only a student who has finished the drive's screening interview (if it has one).
+  // Checked here on the server, so it can't be skipped by changing the page.
+  if (session.role === "RECRUITER" && stage === "SHORTLISTED" && existing.drive.screeningStatus === "PUBLISHED") {
+    await settleApplication(applicationId); // a student whose time ran out counts as finished
+    const attempt = await prisma.screeningAttempt.findUnique({ where: { applicationId }, select: { submittedAt: true } });
+    if (!attempt?.submittedAt) {
+      throw new Error("This student has not finished the screening interview yet, so they can't be shortlisted.");
+    }
   }
 
   const note = stage === "REJECTED" ? feedbackNote?.trim().slice(0, 500) : undefined;

@@ -6,7 +6,8 @@ import { applyToDriveAction, withdrawApplicationAction } from "@/lib/actions/app
 import { useToast } from "@/components/ui/Toast";
 import { journeyLabel } from "@/lib/utils";
 import { fmtDate } from "@/lib/format";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
+import type { AttemptState } from "@/lib/screening";
 import { AiWaitNote } from "@/components/ui/Loader";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Sparkles, MapPin, Calendar, Lock, Award, Clock } from "lucide-react";
@@ -32,6 +33,7 @@ export function StudentDriveCard({
   joinedCompany,
   existing,
   application,
+  screening,
 }: {
   drive: {
     id: string;
@@ -53,6 +55,8 @@ export function StudentDriveCard({
   joinedCompany?: string | null;
   existing: ExistingApp | null;
   application: { stage: string; documentsVerified: boolean } | null;
+  /** Set when the drive has a published screening interview. */
+  screening?: { minutes: number; state: AttemptState } | null;
 }) {
   const { toast } = useToast();
   const [appStage, setAppStage] = useState<string | null>(application?.stage ?? null);
@@ -245,6 +249,7 @@ export function StudentDriveCard({
         {eligible && (
           <div className="mt-4 pt-4 border-t border-border-soft">
             {hasApplied ? (
+              <div>
               <div className="flex flex-wrap items-center gap-3">
                 <Badge tone="brand">{journeyLabel(appStage as string, Boolean(application?.documentsVerified))}</Badge>
                 {appStage === "ELIGIBLE" ? (
@@ -254,6 +259,26 @@ export function StudentDriveCard({
                 ) : (
                   <span className="text-xs text-muted">Follow it on your Placement Journey page.</span>
                 )}
+              </div>
+              {screening && ["ELIGIBLE", "SHORTLISTED", "INTERVIEW"].includes(appStage as string) && (
+                <div className="mt-3 rounded-xl border border-border-soft bg-surface px-4 py-3">
+                  <p className="text-sm font-medium text-ink">Screening interview</p>
+                  {screening.state === "SUBMITTED" ? (
+                    <p className="text-xs text-muted mt-1">Done. The recruiter will read your answers.</p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted mt-1 leading-relaxed">
+                        {screening.state === "IN_PROGRESS"
+                          ? "You have started it. Your timer is running, so please continue now."
+                          : `A short text interview of ${screening.minutes} minutes. The recruiter can shortlist you only after you finish it.`}
+                      </p>
+                      <LinkButton href={`/student/screening/${drive.id}`} size="sm" className="mt-2.5">
+                        {screening.state === "IN_PROGRESS" ? "Continue" : "Take the interview"}
+                      </LinkButton>
+                    </>
+                  )}
+                </div>
+              )}
               </div>
             ) : alreadyJoined ? (
               <div className="flex flex-col items-start gap-1.5">
@@ -276,6 +301,7 @@ export function StudentDriveCard({
                 </Button>
                 <span className="text-xs text-muted">
                   The recruiter sees your profile only after you apply.
+                  {screening ? ` After you apply you will take a ${screening.minutes}-minute text interview.` : ""}
                 </span>
               </div>
             ) : (

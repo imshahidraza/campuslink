@@ -324,6 +324,28 @@ model ScreeningQuestion {
   @@unique([driveId, position])
 }
 
+/// One student's attempt at the screening interview. One per application. The deadline is fixed when the attempt
+/// starts, the answers are saved as the student goes, and the multiple-choice score is counted by code (never by AI).
+/// `feedback` holds optional AI comments on the written answers: advice for the recruiter, never marks.
+model ScreeningAttempt {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  startedAt     DateTime  @default(now())
+  deadlineAt    DateTime
+  submittedAt   DateTime?
+  autoSubmitted Boolean   @default(false)
+  seed          Int // decides this student's question and option order
+  answers       Json // { questionId: optionIndex | "written text" }
+  mcqCorrect    Int?
+  mcqTotal      Int?
+  feedback      Json? // [{ questionId, comment }]
+  feedbackAt    DateTime?
+
+  updatedAt DateTime @updatedAt
+}
+
 /// A student's private AI fit check for a drive. It is NOT an application:
 /// recruiters only see a student after they press Apply (see Application).
 model DriveMatch {
@@ -385,6 +407,9 @@ model Application {
   joinedByRole      Role?     // who confirmed the joining (the placement cell or the recruiter)
 
   interviews Interview[]
+
+  // The student's text screening interview for this drive (at most one).
+  screeningAttempt ScreeningAttempt?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -77,6 +77,19 @@ enum PlacementStatus {
   JOINED
 }
 
+/// Text screening interview of a drive: NONE until questions are drafted, DRAFT while the recruiter reviews them,
+/// PUBLISHED once students can take it.
+enum ScreeningStatus {
+  NONE
+  DRAFT
+  PUBLISHED
+}
+
+enum QuestionKind {
+  MCQ
+  SHORT
+}
+
 enum DriveStatus {
   DRAFT
   OPEN
@@ -273,6 +286,12 @@ model Drive {
   // Optional last moment a student can apply or withdraw.
   applyDeadline DateTime?
 
+  // Text screening interview: the same questions for every student of this drive.
+  screeningStatus    ScreeningStatus     @default(NONE)
+  screeningMinutes   Int                 @default(20)
+  screeningMinScore  Int? // the recruiter's own minimum number of correct multiple-choice answers
+  screeningQuestions ScreeningQuestion[]
+
   applications Application[]
   interviews   Interview[]
   scheduleRequest ScheduleRequest?
@@ -283,6 +302,26 @@ model Drive {
 
   @@index([recruiterId])
   @@index([status])
+}
+
+/// One question of a drive's screening interview. MCQ has four options and the index of the right one;
+/// SHORT is a written answer, with a note on what a good answer covers (used only for AI feedback).
+model ScreeningQuestion {
+  id      String @id @default(cuid())
+  driveId String
+  drive   Drive  @relation(fields: [driveId], references: [id], onDelete: Cascade)
+
+  position     Int
+  kind         QuestionKind
+  prompt       String
+  options      String[]     @default([])
+  correctIndex Int?
+  lookFor      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([driveId, position])
 }
 
 /// A student's private AI fit check for a drive. It is NOT an application:

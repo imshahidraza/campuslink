@@ -4,6 +4,7 @@ import { requireRecruiterOrRedirect } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui/Card";
 import { LinkButton } from "@/components/ui/Button";
 import { DriveStatusControl, BulkMatchButton } from "@/components/dashboard/DriveDetailControls";
+import { ScreeningCard } from "@/components/dashboard/ScreeningCard";
 import { RecruiterCandidateRow } from "@/components/dashboard/RecruiterCandidateRow";
 import { AutoScheduleForm } from "@/components/dashboard/AutoScheduleForm";
 import { ScheduleRequestCard } from "@/components/dashboard/ScheduleRequestCard";
@@ -23,6 +24,7 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
         include: { student: { include: { user: true, resume: { select: { id: true } } } } },
         orderBy: { fitScore: "desc" },
       },
+      screeningQuestions: { orderBy: { position: "asc" } },
     },
   });
   // A recruiter can only open their own drives (IDOR guard).
@@ -103,6 +105,30 @@ export default async function RecruiterDriveDetail({ params }: { params: Promise
                 {recommended.map((app) => (
                   <RecruiterCandidateRow key={app.id} application={app} window={window} />
                 ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {approved && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Screening interview</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3">
+                <ScreeningCard
+                  driveId={drive.id}
+                  status={drive.screeningStatus}
+                  minutes={drive.screeningMinutes}
+                  questions={drive.screeningQuestions.map((q) => ({
+                    id: q.id,
+                    position: q.position,
+                    kind: q.kind,
+                    prompt: q.prompt,
+                    options: q.options,
+                    correctIndex: q.correctIndex,
+                    lookFor: q.lookFor,
+                  }))}
+                />
               </CardContent>
             </Card>
           )}

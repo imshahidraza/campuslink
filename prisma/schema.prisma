@@ -77,6 +77,49 @@ enum PlacementStatus {
   JOINED
 }
 
+/// Text screening interview of a drive: NONE until questions are drafted, DRAFT while the recruiter reviews them,
+/// PUBLISHED once students can take it.
+enum ScreeningStatus {
+  NONE
+  DRAFT
+  PUBLISHED
+}
+
+/// Where a recorded (video) interview attempt stands.
+enum VideoAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED // the student answered or skipped all five questions
+  TIMED_OUT // the 15 minutes ran out
+  INTERRUPTED // the page was closed or reloaded, or the camera or microphone stopped
+}
+
+enum VideoAnswerStatus {
+  PENDING
+  ANSWERED
+  SKIPPED
+  UNANSWERED // never reached (time ran out or the attempt was interrupted)
+}
+
+/// Used for the background steps after a recording ends: tidying the file, speech-to-text, AI scoring.
+enum VideoStepStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+/// RAW = the pieces as the browser uploaded them. FINAL = the same recording after it was re-packaged so
+/// that the recruiter can jump to any moment.
+enum VideoChunkKind {
+  RAW
+  FINAL
+}
+
+enum QuestionKind {
+  MCQ
+  SHORT
+}
+
 enum DriveStatus {
   DRAFT
   OPEN
@@ -203,14 +246,47 @@ model Recruiter {
   companyDesc String?
   website     String?
   industry    String?
+  contactRole String? // the recruiter's own job title, e.g. "HR Manager"
 
   // New recruiters wait for the TPO to approve them before they can create drives.
   status RecruiterStatus @default(PENDING)
 
   drives        Drive[]
   notifications RecruiterNotification[]
+  keyPeople     KeyPerson[]
 
   createdAt DateTime @default(now())
+}
+
+/// Up to three people a recruiter showcases on their company profile (CEO, HR, CFO ...).
+/// position is 0, 1 or 2. The photo lives in its own table so list queries never pull image bytes.
+model KeyPerson {
+  id          String    @id @default(cuid())
+  recruiterId String
+  recruiter   Recruiter @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+
+  position   Int
+  role       String
+  name       String
+  profileUrl String? // LinkedIn or any web profile link (http/https only, checked on save)
+  photo      KeyPersonPhoto?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([recruiterId, position])
+}
+
+/// The photo of a key person (JPEG, PNG or WebP). Served only by /api/key-people/[id]/photo,
+/// which checks who is asking.
+model KeyPersonPhoto {
+  id          String    @id @default(cuid())
+  keyPersonId String    @unique
+  keyPerson   KeyPerson @relation(fields: [keyPersonId], references: [id], onDelete: Cascade)
+  mimeType    String
+  size        Int
+  data        Bytes
+  uploadedAt  DateTime  @default(now())
 }
 
 model Drive {
@@ -240,6 +316,16 @@ model Drive {
   // Optional last moment a student can apply or withdraw.
   applyDeadline DateTime?
 
+  // Text screening interview: the same questions for every student of this drive.
+  screeningStatus    ScreeningStatus     @default(NONE)
+  screeningMinutes   Int                 @default(20)
+  screeningMinScore  Int? // the recruiter's own minimum number of correct multiple-choice answers
+  screeningQuestions ScreeningQuestion[]
+
+  // Optional recorded video interview: five spoken questions, the same for every student of this drive.
+  videoStatus    ScreeningStatus @default(NONE)
+  videoQuestions VideoQuestion[]
+
   applications Application[]
   interviews   Interview[]
   scheduleRequest ScheduleRequest?
@@ -250,6 +336,169 @@ model Drive {
 
   @@index([recruiterId])
   @@index([status])
+}
+
+/// One question of a drive's screening interview. MCQ has four options and the index of the right one;
+/// SHORT is a written answer, with a note on what a good answer covers (used only for AI feedback).
+model ScreeningQuestion {
+  id      String @id @default(cuid())
+  driveId String
+  drive   Drive  @relation(fields: [driveId], references: [id], onDelete: Cascade)
+
+  position     Int
+  kind         QuestionKind
+  prompt       String
+  options      String[]     @default([])
+  correctIndex Int?
+  lookFor      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([driveId, position])
+}
+
+/// One student's attempt at the screening interview. One per application. The deadline is fixed when the attempt
+/// starts, the answers are saved as the student goes, and the multiple-choice score is counted by code (never by AI).
+/// `feedback` holds optional AI comments on the written answers: advice for the recruiter, never marks.
+model ScreeningAttempt {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  startedAt     DateTime  @default(now())
+  deadlineAt    DateTime
+  submittedAt   DateTime?
+  autoSubmitted Boolean   @default(false)
+  leaveCount    Int       @default(0) // how many times the student left the test page (tab switch, other window). Counted on the server.
+  seed          Int // decides this student's question and option order
+  answers       Json // { questionId: optionIndex | "written text" }
+  mcqCorrect    Int?
+  mcqTotal      Int?
+  feedback      Json? // [{ questionId, comment }]
+  feedbackAt    DateTime?
+
+  updatedAt DateTime @updatedAt
+}
+
+/// One of the five spoken questions of a drive's video interview. `expected` lists the ideas a good answer covers
+/// (for the AI scoring only; students never see it).
+model VideoQuestion {
+  id      String @id @default(cuid())
+  driveId String
+  drive   Drive  @relation(fields: [driveId], references: [id], onDelete: Cascade)
+
+  position Int
+  prompt   String
+  expected String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([driveId, position])
+}
+
+/// One student's recorded video interview. One per application. The deadline is fixed on the server when the
+/// attempt starts. The recording itself lives in VideoChunk rows, inside PostgreSQL.
+model VideoAttempt {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  status      VideoAttemptStatus @default(IN_PROGRESS)
+  consentAt   DateTime // when the student ticked the consent box and pressed Start
+  startedAt   DateTime           @default(now())
+  deadlineAt  DateTime
+  endedAt     DateTime?
+  endReason   String? // ALL_DONE, TIME_UP, LEFT_PAGE, DEVICE
+  mimeType    String // the real type the browser recorded, for example video/webm;codecs=vp8,opus
+  leaveCount  Int                @default(0) // times the student left the page during the interview
+  lastChunkAt DateTime?
+
+  chunkCount  Int     @default(0) // pieces kept (an unbroken run from the first piece)
+  byteSize    Int     @default(0)
+  durationSec Float?
+  gapNote     String? // set if some pieces never arrived
+
+  remuxStatus         VideoStepStatus @default(PENDING)
+  transcriptionStatus VideoStepStatus @default(PENDING)
+  evaluationStatus    VideoStepStatus @default(PENDING)
+  processingStartedAt DateTime?
+  processNote         String?
+
+  totalScore  Int? // out of 500, advice only
+  reviewCount Int  @default(0) // answers the recruiter should check by hand
+
+  retainUntil        DateTime? // the recording is deleted after this date
+  recordingDeletedAt DateTime?
+
+  answers    VideoAnswer[]
+  chunks     VideoChunk[]
+  accessLogs VideoAccessLog[]
+
+  updatedAt DateTime @updatedAt
+
+  @@index([status, deadlineAt])
+}
+
+/// One of the five questions inside an attempt: what the student did with it, where it sits in the recording,
+/// the transcript and the AI's advice. The question text is copied here, so it can never change afterwards.
+model VideoAnswer {
+  id        String       @id @default(cuid())
+  attemptId String
+  attempt   VideoAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  position Int
+  prompt   String
+  expected String?
+
+  status   VideoAnswerStatus @default(PENDING)
+  startSec Float? // where the answer starts in the recording
+  endSec   Float?
+
+  transcript       String?
+  transcriptStatus VideoStepStatus @default(PENDING)
+  evalStatus       VideoStepStatus @default(PENDING)
+
+  score        Int? // out of 100, advice only
+  technical    Int? // out of 40
+  relevance    Int? // out of 25
+  completeness Int? // out of 20
+  clarity      Int? // out of 15
+  strengths    String[] @default([])
+  improvements String[] @default([])
+  feedback     String?
+  needsReview  Boolean  @default(false)
+  note         String?
+
+  @@unique([attemptId, position])
+}
+
+/// A piece of the recording, stored as binary data inside PostgreSQL.
+model VideoChunk {
+  id        String         @id @default(cuid())
+  attemptId String
+  attempt   VideoAttempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  kind      VideoChunkKind
+  seq       Int
+  size      Int
+  data      Bytes
+  createdAt DateTime       @default(now())
+
+  @@unique([attemptId, kind, seq])
+}
+
+/// Who looked at or changed a recording, and when.
+model VideoAccessLog {
+  id        String       @id @default(cuid())
+  attemptId String
+  attempt   VideoAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  userId    String
+  role      String
+  action    String // VIEW, PLAY, REPROCESS, DELETE_RECORDING
+  createdAt DateTime     @default(now())
+
+  @@index([attemptId, createdAt])
 }
 
 /// A student's private AI fit check for a drive. It is NOT an application:
@@ -313,6 +562,12 @@ model Application {
   joinedByRole      Role?     // who confirmed the joining (the placement cell or the recruiter)
 
   interviews Interview[]
+
+  // The student's text screening interview for this drive (at most one).
+  screeningAttempt ScreeningAttempt?
+
+  // The student's recorded video interview for this drive (at most one).
+  videoAttempt VideoAttempt?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

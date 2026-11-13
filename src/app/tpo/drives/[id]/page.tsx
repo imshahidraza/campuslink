@@ -10,16 +10,24 @@ import { ApplicationReviewRow } from "@/components/dashboard/ApplicationReviewRo
 import { SpecialConsiderationPanel } from "@/components/dashboard/SpecialConsiderationPanel";
 import { stageLabel } from "@/lib/utils";
 import { FileDown } from "lucide-react";
+import { settleDrive } from "@/lib/screeningAttempt";
+import { settleVideoDrive } from "@/lib/videoAttempt";
 
 export default async function TpoDriveDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  await settleDrive(id); // finish attempts whose time ran out, so the counts below are right
+  await settleVideoDrive(id);
   const [drive, allStudents] = await Promise.all([
     prisma.drive.findUnique({
       where: { id },
       include: {
         recruiter: true,
         applications: {
-          include: { student: { include: { user: true, resume: { select: { id: true } } } } },
+          include: {
+            student: { include: { user: true, resume: { select: { id: true } } } },
+            screeningAttempt: { select: { submittedAt: true } },
+            videoAttempt: { select: { status: true } },
+          },
           orderBy: { fitScore: "desc" },
         },
       },
@@ -41,6 +49,12 @@ export default async function TpoDriveDetail({ params }: { params: Promise<{ id:
       note: a.specialConsiderationNote,
       fitScore: a.fitScore,
     }));
+
+  const screeningApplicants = drive.applications.filter((a) => a.stage !== "WITHDRAWN");
+  const screeningFinished = screeningApplicants.filter((a) => a.screeningAttempt?.submittedAt).length;
+  const videoFinished = screeningApplicants.filter((a) => a.videoAttempt && a.videoAttempt.status !== "IN_PROGRESS").length;
+  const videoStarted = screeningApplicants.filter((a) => a.videoAttempt?.status === "IN_PROGRESS").length;
+  const screeningStarted = screeningApplicants.filter((a) => a.screeningAttempt && !a.screeningAttempt.submittedAt).length;
 
   return (
     <div>
@@ -119,6 +133,56 @@ export default async function TpoDriveDetail({ params }: { params: Promise<{ id:
         </div>
 
         <div className="space-y-5">
+          <Card className="h-fit">
+            <CardHeader>
+              <CardTitle>Screening interview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {drive.screeningStatus === "PUBLISHED" ? (
+                <>
+                  <p className="text-sm text-ink">
+                    {screeningFinished} of {screeningApplicants.length} applicant{screeningApplicants.length === 1 ? "" : "s"} finished
+                  </p>
+                  <p className="text-xs text-muted mt-1 leading-relaxed">
+                    {screeningStarted} in progress · {screeningApplicants.length - screeningFinished - screeningStarted} not started.
+                    The recruiter shortlists only students who finish it.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted">
+                  {drive.screeningStatus === "DRAFT"
+                    ? "The recruiter is preparing the questions. Students can't see them yet."
+                    : "The recruiter has not set up a screening interview for this drive."}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="h-fit">
+            <CardHeader>
+              <CardTitle>Video interview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {drive.videoStatus === "PUBLISHED" ? (
+                <>
+                  <p className="text-sm text-ink">
+                    {videoFinished} of {screeningApplicants.length} applicant{screeningApplicants.length === 1 ? "" : "s"} finished
+                  </p>
+                  <p className="text-xs text-muted mt-1 leading-relaxed">
+                    {videoStarted} taking it now · {screeningApplicants.length - videoFinished - videoStarted} not started. Counts only: the recordings and
+                    marks are seen by the recruiter of this drive.
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted">
+                  {drive.videoStatus === "DRAFT"
+                    ? "The recruiter is preparing the questions. Students can't see them yet."
+                    : "The recruiter has not set up a video interview for this drive."}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           <Card className="h-fit">
             <CardHeader>
               <CardTitle>Eligibility rules</CardTitle>

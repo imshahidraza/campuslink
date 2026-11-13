@@ -1,0 +1,7 @@
+# The versions are pinned on purpose: faster-whisper 1.x needs PyAV 15 or 16 (PyAV 19 breaks it).
+faster-whisper>=1.1,<2
+av>=15,<17
+numpy>=1.26
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9

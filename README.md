@@ -88,6 +88,31 @@ Offers originate with the **recruiter**:
 
 Stages: Applied → Shortlisted → Interview → Selected → Offer requested → Offer sent → Offer accepted → Joined. Side branches: Not selected, Offer declined, Withdrawn.
 
+## Recruiter profile and key people
+
+* **Profile setup** (Recruiter -> Profile setup): the recruiter's name and role, and the company's name, industry, website and about. The company name appears in the greeting on their Overview.
+* **Company Profile** (Recruiter -> Company Profile): up to **3 key people** (for example CEO, HR head, CFO), each with a photo, role, name and a LinkedIn or profile link.
+* The placement cell sees key people on **Recruiters**. Students see them on **Drives & Matching** (under "About the company") only after the placement cell has approved that recruiter.
+* Links are blue, underlined and open in a new tab. Only plain http/https addresses are accepted, so `javascript:` and similar can never become a link.
+* Photos must be JPG, PNG or WebP, up to 2 MB. The file's real bytes are checked (not its name), SVG is refused, and each photo is served only to people allowed to see it.
+
+### Upgrading an existing database for this feature
+
+It adds one optional column and two new tables. Nothing existing is changed.
+
+```bash
+pg_dump "$DATABASE_URL" > backup.sql        # back up first
+npx prisma db execute --file prisma/upgrade/finals-updates.sql --schema prisma/schema.prisma
+npx prisma generate
+```
+
+Safe to run twice. After this, do not run `prisma migrate dev` or `npm run db:reset` on that database.
+
+## Menu and greeting
+
+* Every portal has a three-line button at the top-left that closes and opens the left menu.
+* Each Overview starts with "Good morning / afternoon / evening" (Indian time), then the name (company, student or college), then a short warm sentence that changes at every sign-in and always ends with "Welcome to C-Link."
+
 ## AI features
 
 All AI runs locally through Ollama (Gemma), one request at a time, with the model kept loaded for 30 minutes. A fit check can take up to a minute.
@@ -117,3 +142,68 @@ Students, recruiters and the TPO each get in-app notifications for the events th
 * This build is **single-college**: one shared roster, no separate data per college.
 * "Specialization" is the term on screen. The database field is still called `branch`.
 * Reset a user's password from the command line with `npm run reset-password`.
+
+## Screening interview (text)
+
+Every drive can have a short text interview: 4 to 5 multiple-choice questions and up to 2 written ones, the same for every student.
+
+- **Recruiter:** on the drive page, the AI drafts the questions from the job description. The recruiter reads, edits or removes them, sets the time limit (5 to 60 minutes) and an optional minimum score, then approves. Published questions can't be changed.
+- **Student:** after applying, the student takes it once on `/student/screening/<driveId>`. The order of questions and options is shuffled per student, the time limit is counted on the server, answers are saved as they go, and an attempt whose time runs out is submitted with what was saved.
+- **Scoring:** the multiple-choice score is counted by code. The AI only writes short comments on the written answers, as advice for the recruiter. It never gives marks.
+- **Shortlisting:** a recruiter can shortlist only a student who has finished the interview. The server enforces this.
+- **Results:** the recruiter sees a sortable score (no rank numbers), a separate "Below your minimum" list (nobody is removed), and each student's answers. The placement cell sees only how many have finished.
+- **Upgrading an existing database:** run `prisma/upgrade/screening-step1.sql` and then `prisma/upgrade/screening-step2.sql` with `npx prisma db execute --file <file> --schema prisma/schema.prisma`. Both only add things and are safe to run twice.
+
+## Video interview (recorded, optional second round)
+
+A drive can also have a recorded video interview: **5 spoken questions, 15 minutes in total, one continuous recording**. The recruiter chooses for each drive whether the screening is the text interview, the video interview, or both. Chrome or Edge on a desktop or laptop is needed (a phone or another browser is told to switch).
+
+- **Recruiter:** on the drive page, the AI drafts 5 questions from the job description (or the recruiter writes them), edits them, and approves. Published questions can't be changed. Results are under **AI Interviews** in the menu.
+- **Student:** reads the 12 rules, ticks the consent line, checks the camera and microphone, and presses Start. The recording starts first; if it can't start, nothing is counted as started. There is no per-question timer and no live countdown (one "less than a minute left" notice appears at the end). To answer, the student **presses and holds** the microphone button and lets go to finish (a very short touch is ignored). A question can be skipped for good after a confirmation (it scores 0 and never comes back). When the 15 minutes end, the recording stops and is submitted by the server's clock. The student sees "Assessment Submitted Successfully" and no marks.
+- **Recording:** the browser sends the video to the server in small pieces while the interview runs, so a closed laptop loses only the last few seconds. The pieces are checked, joined and repaired (so the recruiter can seek), and stored **in PostgreSQL**. There is no public link to any recording.
+- **Marks:** each answer is turned into text by Whisper on your own computer, then Gemma gives advice out of 100 (technical 40, relevance 25, completeness 20, clarity 15), total out of 500. The total is added up by code from the four parts. It is **advice only**: the AI never sees the face, and does not judge eye contact, looks, accent or background. A silent, very short or unreadable answer is **flagged for the recruiter to listen to, not given 0**. A skipped question gets 0.
+- **Recruiter review:** a player (seek by clicking a question's time), the transcript, the four sub-scores with a one-line reason, and a flag for anything the AI could not mark. Buttons: **Process again**, **Delete recording**, **Let the student retake** (this deletes that attempt, including its access log).
+- **Shortlisting:** a recruiter can shortlist only a student whose video interview has finished. The server enforces this.
+- **Placement cell:** sees only how many students have finished. It can't open recordings.
+
+### Setting it up
+
+1. Back up, then add the new tables (run **after** the three `screening-step*.sql` files; safe to run twice):
+
+   ```bash
+   npx prisma db execute --file prisma/upgrade/video-interview.sql --schema prisma/schema.prisma
+   npx prisma generate
+   ```
+
+   Do not run `prisma migrate dev` or `npm run db:reset` on a database that has real data.
+2. Set up and start the speech service: see [`whisper-service/README.md`](whisper-service/README.md). Put `WHISPER_API_KEY` in `.env`.
+3. Keep Ollama running, then `npm run dev`.
+
+### Security on the recordings
+
+- Only the **recruiter who owns the drive** (and is approved) can play a recording. Everyone else, including other recruiters, the placement cell and the student, gets "not found". The student never receives the recording or the marks.
+- The video comes only from `/api/video/<attempt>/media`, which checks the session, the role and the ownership on every request (so every seek too), answers `Range` requests, and sends `Cache-Control: private, no-store`.
+- Uploads accept only the student's own running attempt, WebM with the right file signature, at most 3 MiB a piece and 220 MiB in all, rate limited, and the same piece sent twice is stored once.
+- Every answer, skip and finish is checked again on the server: the order, the time window against the recording clock, and that nothing is repeated.
+- Consent time is stored. Every play, delete and retake by a recruiter is written to an access log.
+- Recordings are **deleted after 30 days** (the marks and transcripts stay). A recruiter can delete one earlier.
+- The speech service listens on `127.0.0.1` only and needs the secret key.
+
+### Database size and speed: the trade-off
+
+Putting the video in PostgreSQL keeps everything in one place (one backup, one set of access rules, no public file links), but it makes the database bigger.
+
+- A 15-minute recording is about **60 MB** (video about 500 kbps and audio 48 kbps). 100 students is about 6 GB. After 30 days the video is deleted, so the size stays around "last 30 days of interviews".
+- The video is stored in 1 MiB rows with `STORAGE EXTERNAL` (no compression, since video is already compressed), and played by reading only the rows the player asks for. Seeking does not load the whole file.
+- `pg_dump` and backups include the recordings, so they get large. Delete old recordings or exclude the `VideoChunk` table from a quick backup.
+- Free hosted databases (for example Neon's free plan) are only 0.5 GB, so they are **not** suitable for the video interview. The plan for the finals is to run on the laptop.
+- If this ever grows beyond one college, the sensible next step is to move the pieces to object storage (S3-style) and keep only the details in PostgreSQL.
+
+### Honest limits
+
+- Transcription quality depends on the Whisper model (`small` by default), the microphone, and the room. It is checked here with a stub, not with real students' speech. Please judge it on your own laptop with a real recording before the finals.
+- If a student closes the tab, loses power, or loses the network for good, the recording ends there. The attempt is saved as **Interrupted** with what reached the server and an honest note. A browser cannot keep recording after its tab is closed.
+- A student who refreshes the page cannot continue the same recording. The re-opened page shows that the interview is running (or finished) and does not start a second one.
+- Downloading is discouraged (no download button, no public link) but cannot be fully blocked: the recruiter's browser receives the video in order to play it.
+- Chrome or Edge on desktop only. MFA is still not built.
+- The AI marks are advice. A recruiter always decides.

@@ -1,13 +1,19 @@
 import { requireStudentOrRedirect } from "@/lib/auth";
+import { settleExpired } from "@/lib/screeningAttempt";
+import { settleVideoWhere } from "@/lib/videoAttempt";
+import type { VideoStage } from "@/lib/video";
 import { prisma } from "@/lib/prisma";
 import { checkEligibility, eligibilityFixes } from "@/lib/rules";
 import { StudentDriveCard } from "@/components/dashboard/StudentDriveCard";
+import { keyPersonSelect, toKeyPersonView, MAX_KEY_PEOPLE } from "@/lib/keyPeopleShared";
 
 export default async function DrivesPage() {
   const { student: studentBase } = await requireStudentOrRedirect();
+  await settleExpired({ application: { studentId: studentBase.id } });
+  await settleVideoWhere({ application: { studentId: studentBase.id } });
   const student = await prisma.student.findUniqueOrThrow({
     where: { id: studentBase.id },
-    include: { applications: true, matches: true },
+    include: { applications: { include: { screeningAttempt: { select: { submittedAt: true } }, videoAttempt: { select: { status: true } } } }, matches: true },
   });
 
   const joinedApp =
@@ -19,6 +25,17 @@ export default async function DrivesPage() {
   const openDrives = await prisma.drive.findMany({
     where: { status: { in: ["OPEN", "IN_PROGRESS"] } },
     orderBy: { createdAt: "desc" },
+    include: {
+      recruiter: {
+        select: {
+          status: true,
+          industry: true,
+          website: true,
+          companyDesc: true,
+          keyPeople: { orderBy: { position: "asc" }, take: MAX_KEY_PEOPLE, select: keyPersonSelect },
+        },
+      },
+    },
   });
 
   const drivesWithEligibility = openDrives.map((d) => {
@@ -71,6 +88,17 @@ export default async function DrivesPage() {
                 status: drive.status,
                 applyDeadline: drive.applyDeadline ? drive.applyDeadline.toISOString() : null,
               }}
+              company={
+                // Students see a company's profile and key people only after the placement cell approved the recruiter.
+                drive.recruiter.status === "APPROVED"
+                  ? {
+                      industry: drive.recruiter.industry,
+                      website: drive.recruiter.website,
+                      about: drive.recruiter.companyDesc,
+                      people: drive.recruiter.keyPeople.map(toKeyPersonView),
+                    }
+                  : null
+              }
               eligible={eligibility.eligible || Boolean(app?.specialConsideration)}
               ineligibleReasons={eligibility.reasons}
               ineligibleFixes={fixes}
@@ -88,6 +116,15 @@ export default async function DrivesPage() {
                   : null
               }
               application={app ? { stage: app.stage, documentsVerified: app.documentsVerified } : null}
+              screening={
+                drive.screeningStatus === "PUBLISHED"
+                  ? {
+                      minutes: drive.screeningMinutes,
+                      state: !app?.screeningAttempt ? "NOT_STARTED" : app.screeningAttempt.submittedAt ? "SUBMITTED" : "IN_PROGRESS",
+                    }
+                  : null
+              }
+              video={drive.videoStatus === "PUBLISHED" ? { stage: (app?.videoAttempt?.status ?? "NOT_STARTED") as VideoStage } : null}
             />
           );
         })}

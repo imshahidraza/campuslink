@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui
 import { LinkButton } from "@/components/ui/Button";
 import { stageLabel } from "@/lib/utils";
 import Link from "next/link";
+import { WelcomeBanner } from "@/components/dashboard/WelcomeBanner";
 import { Users, Briefcase, Award, TrendingUp, GraduationCap, ArrowRight } from "lucide-react";
 
 export default async function TpoOverview() {
@@ -29,8 +30,7 @@ export default async function TpoOverview() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-ink">{college?.name || "Placement Cell"} Overview</h1>
-      <p className="text-muted text-sm mt-1">A single view across students, drives, and outcomes.</p>
+      <WelcomeBanner role="TPO" name={college?.name || "Placement Cell"} />
 
       {specializationCount === 0 && (
         <div className="mt-6 rounded-2xl border border-brand-200 bg-brand-100/50 px-5 py-4 flex items-center justify-between gap-4">

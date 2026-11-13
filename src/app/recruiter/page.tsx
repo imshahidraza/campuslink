@@ -4,9 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle, Badge } from "@/components/ui
 import { LinkButton } from "@/components/ui/Button";
 import { stageLabel } from "@/lib/utils";
 import { Plus } from "lucide-react";
+import { WelcomeBanner } from "@/components/dashboard/WelcomeBanner";
 
 export default async function RecruiterOverview() {
-  const { session, recruiter: recruiterBase } = await requireRecruiterOrRedirect();
+  const { recruiter: recruiterBase } = await requireRecruiterOrRedirect();
   const recruiter = await prisma.recruiter.findUniqueOrThrow({
     where: { id: recruiterBase.id },
     include: { drives: { include: { applications: true }, orderBy: { createdAt: "desc" } } },
@@ -23,17 +24,17 @@ export default async function RecruiterOverview() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">{recruiter.companyName}</h1>
-          <p className="text-muted text-sm mt-1">Welcome, {session.name}.</p>
-        </div>
-        {recruiterBase.status === "APPROVED" && (
-          <LinkButton href="/recruiter/drives/new" size="sm">
-            <Plus className="h-4 w-4" /> New drive
-          </LinkButton>
-        )}
-      </div>
+      <WelcomeBanner
+        role="RECRUITER"
+        name={recruiter.companyName}
+        action={
+          recruiterBase.status === "APPROVED" ? (
+            <LinkButton href="/recruiter/drives/new" size="sm">
+              <Plus className="h-4 w-4" /> New drive
+            </LinkButton>
+          ) : undefined
+        }
+      />
 
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card>

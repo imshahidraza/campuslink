@@ -248,3 +248,4 @@ export function scoreMcq(
 
 /** Where a student's attempt stands, from the recruiter's and the student's point of view. */
 export type AttemptState = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED";
+export const plainText = plain;

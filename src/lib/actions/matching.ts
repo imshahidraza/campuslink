@@ -9,6 +9,7 @@ import { assertCanManageDrive } from "@/lib/access";
 import { placementCellLabel } from "@/lib/college";
 import { refreshPlacementStatus } from "@/lib/placement";
 import { settleApplication } from "@/lib/screeningAttempt";
+import { settleVideoApplication } from "@/lib/videoAttempt";
 import type { Student } from "@prisma/client";
 
 function projectsToText(student: Student): string {
@@ -163,7 +164,7 @@ export async function updateApplicationStageAction(applicationId: string, stage:
   assertAnyRole(session, ["TPO", "RECRUITER"]);
   const existing = await prisma.application.findUniqueOrThrow({
     where: { id: applicationId },
-    select: { stage: true, drive: { select: { recruiterId: true, screeningStatus: true } } },
+    select: { stage: true, drive: { select: { recruiterId: true, screeningStatus: true, videoStatus: true } } },
   });
   // Recruiters may only act on applications for their own drives (IDOR guard).
   await assertCanManageDrive(session, existing.drive.recruiterId);
@@ -185,6 +186,15 @@ export async function updateApplicationStageAction(applicationId: string, stage:
     const attempt = await prisma.screeningAttempt.findUnique({ where: { applicationId }, select: { submittedAt: true } });
     if (!attempt?.submittedAt) {
       throw new Error("This student has not finished the screening interview yet, so they can't be shortlisted.");
+    }
+  }
+
+  // The same for the video interview. "Finished" means closed in any way: submitted, ended by the 15 minutes, or interrupted.
+  if (session.role === "RECRUITER" && stage === "SHORTLISTED" && existing.drive.videoStatus === "PUBLISHED") {
+    await settleVideoApplication(applicationId);
+    const video = await prisma.videoAttempt.findUnique({ where: { applicationId }, select: { status: true } });
+    if (!video || video.status === "IN_PROGRESS") {
+      throw new Error("This student has not finished the video interview yet, so they can't be shortlisted.");
     }
   }
 

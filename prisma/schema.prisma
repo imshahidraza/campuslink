@@ -85,6 +85,36 @@ enum ScreeningStatus {
   PUBLISHED
 }
 
+/// Where a recorded (video) interview attempt stands.
+enum VideoAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED // the student answered or skipped all five questions
+  TIMED_OUT // the 15 minutes ran out
+  INTERRUPTED // the page was closed or reloaded, or the camera or microphone stopped
+}
+
+enum VideoAnswerStatus {
+  PENDING
+  ANSWERED
+  SKIPPED
+  UNANSWERED // never reached (time ran out or the attempt was interrupted)
+}
+
+/// Used for the background steps after a recording ends: tidying the file, speech-to-text, AI scoring.
+enum VideoStepStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+/// RAW = the pieces as the browser uploaded them. FINAL = the same recording after it was re-packaged so
+/// that the recruiter can jump to any moment.
+enum VideoChunkKind {
+  RAW
+  FINAL
+}
+
 enum QuestionKind {
   MCQ
   SHORT
@@ -292,6 +322,10 @@ model Drive {
   screeningMinScore  Int? // the recruiter's own minimum number of correct multiple-choice answers
   screeningQuestions ScreeningQuestion[]
 
+  // Optional recorded video interview: five spoken questions, the same for every student of this drive.
+  videoStatus    ScreeningStatus @default(NONE)
+  videoQuestions VideoQuestion[]
+
   applications Application[]
   interviews   Interview[]
   scheduleRequest ScheduleRequest?
@@ -345,6 +379,126 @@ model ScreeningAttempt {
   feedbackAt    DateTime?
 
   updatedAt DateTime @updatedAt
+}
+
+/// One of the five spoken questions of a drive's video interview. `expected` lists the ideas a good answer covers
+/// (for the AI scoring only; students never see it).
+model VideoQuestion {
+  id      String @id @default(cuid())
+  driveId String
+  drive   Drive  @relation(fields: [driveId], references: [id], onDelete: Cascade)
+
+  position Int
+  prompt   String
+  expected String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([driveId, position])
+}
+
+/// One student's recorded video interview. One per application. The deadline is fixed on the server when the
+/// attempt starts. The recording itself lives in VideoChunk rows, inside PostgreSQL.
+model VideoAttempt {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  status      VideoAttemptStatus @default(IN_PROGRESS)
+  consentAt   DateTime // when the student ticked the consent box and pressed Start
+  startedAt   DateTime           @default(now())
+  deadlineAt  DateTime
+  endedAt     DateTime?
+  endReason   String? // ALL_DONE, TIME_UP, LEFT_PAGE, DEVICE
+  mimeType    String // the real type the browser recorded, for example video/webm;codecs=vp8,opus
+  leaveCount  Int                @default(0) // times the student left the page during the interview
+  lastChunkAt DateTime?
+
+  chunkCount  Int     @default(0) // pieces kept (an unbroken run from the first piece)
+  byteSize    Int     @default(0)
+  durationSec Float?
+  gapNote     String? // set if some pieces never arrived
+
+  remuxStatus         VideoStepStatus @default(PENDING)
+  transcriptionStatus VideoStepStatus @default(PENDING)
+  evaluationStatus    VideoStepStatus @default(PENDING)
+  processingStartedAt DateTime?
+  processNote         String?
+
+  totalScore  Int? // out of 500, advice only
+  reviewCount Int  @default(0) // answers the recruiter should check by hand
+
+  retainUntil        DateTime? // the recording is deleted after this date
+  recordingDeletedAt DateTime?
+
+  answers    VideoAnswer[]
+  chunks     VideoChunk[]
+  accessLogs VideoAccessLog[]
+
+  updatedAt DateTime @updatedAt
+
+  @@index([status, deadlineAt])
+}
+
+/// One of the five questions inside an attempt: what the student did with it, where it sits in the recording,
+/// the transcript and the AI's advice. The question text is copied here, so it can never change afterwards.
+model VideoAnswer {
+  id        String       @id @default(cuid())
+  attemptId String
+  attempt   VideoAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  position Int
+  prompt   String
+  expected String?
+
+  status   VideoAnswerStatus @default(PENDING)
+  startSec Float? // where the answer starts in the recording
+  endSec   Float?
+
+  transcript       String?
+  transcriptStatus VideoStepStatus @default(PENDING)
+  evalStatus       VideoStepStatus @default(PENDING)
+
+  score        Int? // out of 100, advice only
+  technical    Int? // out of 40
+  relevance    Int? // out of 25
+  completeness Int? // out of 20
+  clarity      Int? // out of 15
+  strengths    String[] @default([])
+  improvements String[] @default([])
+  feedback     String?
+  needsReview  Boolean  @default(false)
+  note         String?
+
+  @@unique([attemptId, position])
+}
+
+/// A piece of the recording, stored as binary data inside PostgreSQL.
+model VideoChunk {
+  id        String         @id @default(cuid())
+  attemptId String
+  attempt   VideoAttempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  kind      VideoChunkKind
+  seq       Int
+  size      Int
+  data      Bytes
+  createdAt DateTime       @default(now())
+
+  @@unique([attemptId, kind, seq])
+}
+
+/// Who looked at or changed a recording, and when.
+model VideoAccessLog {
+  id        String       @id @default(cuid())
+  attemptId String
+  attempt   VideoAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  userId    String
+  role      String
+  action    String // VIEW, PLAY, REPROCESS, DELETE_RECORDING
+  createdAt DateTime     @default(now())
+
+  @@index([attemptId, createdAt])
 }
 
 /// A student's private AI fit check for a drive. It is NOT an application:
@@ -411,6 +565,9 @@ model Application {
 
   // The student's text screening interview for this drive (at most one).
   screeningAttempt ScreeningAttempt?
+
+  // The student's recorded video interview for this drive (at most one).
+  videoAttempt VideoAttempt?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

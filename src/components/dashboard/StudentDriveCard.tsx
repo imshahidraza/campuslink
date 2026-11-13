@@ -8,6 +8,7 @@ import { journeyLabel } from "@/lib/utils";
 import { fmtDate } from "@/lib/format";
 import { Button, LinkButton } from "@/components/ui/Button";
 import type { AttemptState } from "@/lib/screening";
+import type { VideoStage } from "@/lib/video";
 import { AiWaitNote } from "@/components/ui/Loader";
 import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Sparkles, MapPin, Calendar, Lock, Award, Clock } from "lucide-react";
@@ -34,6 +35,7 @@ export function StudentDriveCard({
   existing,
   application,
   screening,
+  video,
 }: {
   drive: {
     id: string;
@@ -57,6 +59,8 @@ export function StudentDriveCard({
   application: { stage: string; documentsVerified: boolean } | null;
   /** Set when the drive has a published screening interview. */
   screening?: { minutes: number; state: AttemptState } | null;
+  /** Set when the drive has a published video interview. The student's own submission status only, never marks. */
+  video?: { stage: VideoStage } | null;
 }) {
   const { toast } = useToast();
   const [appStage, setAppStage] = useState<string | null>(application?.stage ?? null);
@@ -279,6 +283,27 @@ export function StudentDriveCard({
                   )}
                 </div>
               )}
+              {video && ["ELIGIBLE", "SHORTLISTED", "INTERVIEW"].includes(appStage as string) && (
+                <div className="mt-3 rounded-xl border border-border-soft bg-surface px-4 py-3">
+                  <p className="text-sm font-medium text-ink">Video interview</p>
+                  {video.stage === "SUBMITTED" || video.stage === "TIMED_OUT" ? (
+                    <p className="text-xs text-muted mt-1">Submitted. The recruiter will review it and let you know.</p>
+                  ) : video.stage === "INTERRUPTED" ? (
+                    <p className="text-xs text-muted mt-1">It was interrupted. What was recorded has been saved for the recruiter.</p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted mt-1 leading-relaxed">
+                        {video.stage === "IN_PROGRESS"
+                          ? "It is running or was left open. Open it to see where it stands."
+                          : "A recorded interview with 5 spoken questions in at most 15 minutes. You need a computer with a camera and a microphone. The recruiter can shortlist you only after you finish it."}
+                      </p>
+                      <LinkButton href={`/student/video/${drive.id}`} size="sm" className="mt-2.5">
+                        {video.stage === "IN_PROGRESS" ? "Open" : "Start the video interview"}
+                      </LinkButton>
+                    </>
+                  )}
+                </div>
+              )}
               </div>
             ) : alreadyJoined ? (
               <div className="flex flex-col items-start gap-1.5">
@@ -302,6 +327,7 @@ export function StudentDriveCard({
                 <span className="text-xs text-muted">
                   The recruiter sees your profile only after you apply.
                   {screening ? ` After you apply you will take a ${screening.minutes}-minute text interview.` : ""}
+                  {video ? " After you apply you will also take a recorded video interview." : ""}
                 </span>
               </div>
             ) : (

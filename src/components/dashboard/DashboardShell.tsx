@@ -20,6 +20,7 @@ import {
   BarChart3,
   GraduationCap,
   UserCog,
+  Video,
 } from "lucide-react";
 import { OllamaStatus } from "./OllamaStatus";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -55,6 +56,7 @@ const NAV_CONFIG: Record<
     { label: "Company Profile", href: "/recruiter/profile", icon: Building2 },
     { label: "My Drives", href: "/recruiter/drives", icon: Briefcase },
     { label: "Candidates", href: "/recruiter/candidates", icon: Users },
+    { label: "AI Interviews", href: "/recruiter/interviews", icon: Video },
     { label: "Notifications", href: "/recruiter/notifications", icon: Bell },
   ],
 };

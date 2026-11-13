@@ -1,5 +1,7 @@
 import { requireStudentOrRedirect } from "@/lib/auth";
 import { settleExpired } from "@/lib/screeningAttempt";
+import { settleVideoWhere } from "@/lib/videoAttempt";
+import type { VideoStage } from "@/lib/video";
 import { prisma } from "@/lib/prisma";
 import { checkEligibility, eligibilityFixes } from "@/lib/rules";
 import { StudentDriveCard } from "@/components/dashboard/StudentDriveCard";
@@ -8,9 +10,10 @@ import { keyPersonSelect, toKeyPersonView, MAX_KEY_PEOPLE } from "@/lib/keyPeopl
 export default async function DrivesPage() {
   const { student: studentBase } = await requireStudentOrRedirect();
   await settleExpired({ application: { studentId: studentBase.id } });
+  await settleVideoWhere({ application: { studentId: studentBase.id } });
   const student = await prisma.student.findUniqueOrThrow({
     where: { id: studentBase.id },
-    include: { applications: { include: { screeningAttempt: { select: { submittedAt: true } } } }, matches: true },
+    include: { applications: { include: { screeningAttempt: { select: { submittedAt: true } }, videoAttempt: { select: { status: true } } } }, matches: true },
   });
 
   const joinedApp =
@@ -121,6 +124,7 @@ export default async function DrivesPage() {
                     }
                   : null
               }
+              video={drive.videoStatus === "PUBLISHED" ? { stage: (app?.videoAttempt?.status ?? "NOT_STARTED") as VideoStage } : null}
             />
           );
         })}

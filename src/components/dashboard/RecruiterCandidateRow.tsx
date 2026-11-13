@@ -18,12 +18,16 @@ import { RejectWithFeedback } from "./RejectWithFeedback";
 import { ViewResumeLink } from "./ViewResumeLink";
 import { ScheduleInterviewForm, type ConfirmedWindow } from "./ScheduleInterviewForm";
 import type { AttemptState } from "@/lib/screening";
+import type { VideoStage } from "@/lib/video";
+import Link from "next/link";
 
 interface Props {
   /** The interview window agreed with the placement cell, or null until it is confirmed. */
   window: ConfirmedWindow | null;
   /** The drive's screening interview, if it has one: whether this student has finished it, and the score. */
   screening?: { required: boolean; state: AttemptState; correct: number | null; total: number | null };
+  /** The drive's video interview, if it has one: whether this student has finished it, and where to read it. */
+  video?: { required: boolean; stage: VideoStage; attemptId: string | null; totalScore: number | null; reviewCount: number };
   application: {
     id: string;
     driveId: string;
@@ -66,7 +70,7 @@ const stageTone: Record<string, "neutral" | "brand" | "success" | "warning" | "d
 };
 
 /** What the recruiter can do at each stage. Request Offer appears once a candidate is selected. */
-export function RecruiterCandidateRow({ application, window, screening }: Props) {
+export function RecruiterCandidateRow({ application, window, screening, video }: Props) {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
@@ -110,7 +114,9 @@ export function RecruiterCandidateRow({ application, window, screening }: Props)
 
   const canDecide = ["ELIGIBLE", "SHORTLISTED", "INTERVIEW", "SELECTED"].includes(stage);
   // The server refuses to shortlist a student who hasn't finished the interview; the button says so up front.
-  const waitingForScreening = Boolean(screening?.required) && screening?.state !== "SUBMITTED";
+  const waitingForScreening =
+    (Boolean(screening?.required) && screening?.state !== "SUBMITTED") ||
+    (Boolean(video?.required) && (video?.stage === "NOT_STARTED" || video?.stage === "IN_PROGRESS"));
 
   return (
     <div className="border-b border-border-soft py-4 last:border-0">
@@ -207,6 +213,21 @@ export function RecruiterCandidateRow({ application, window, screening }: Props)
             : screening.state === "IN_PROGRESS"
               ? "Screening interview: the student has started but not finished. You can shortlist once it is done."
               : "Screening interview: not started. You can shortlist once the student finishes it."}
+        </p>
+      )}
+
+      {video?.required && (
+        <p className="mt-2 text-xs text-muted">
+          {video.stage === "NOT_STARTED"
+            ? "Video interview: not started. You can shortlist once the student finishes it."
+            : video.stage === "IN_PROGRESS"
+              ? "Video interview: the student is taking it now, or has not finished it."
+              : `Video interview ${video.stage === "INTERRUPTED" ? "was interrupted" : "done"}${video.totalScore !== null ? `: AI advice ${video.totalScore} of 500` : ""}${video.reviewCount > 0 ? `, ${video.reviewCount} answer${video.reviewCount === 1 ? "" : "s"} for you to check` : ""}. `}
+          {video.attemptId && video.stage !== "IN_PROGRESS" && (
+            <Link href={`/recruiter/interviews/${video.attemptId}`} className="text-brand-500 hover:text-brand-600">
+              Watch and read it
+            </Link>
+          )}
         </p>
       )}
 
